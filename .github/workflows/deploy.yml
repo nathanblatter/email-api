@@ -26,7 +26,8 @@ jobs:
 
           # Single replica (it binds a host port), so this is a recreate with
           # a health gate and automatic rollback rather than blue/green.
-          docker compose up -d app
+          # Brings up the tunnel sidecar too (it only starts after app).
+          docker compose up -d
 
           echo "Waiting for the new container to be healthy..."
           for i in $(seq 1 24); do

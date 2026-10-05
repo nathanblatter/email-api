@@ -130,7 +130,9 @@ func (m *MinIO) Put(ctx context.Context, filename, contentType string, data []by
 	expires := m.cfg.Now().Add(m.cfg.TTL)
 	_, err = m.client.PutObject(ctx, m.cfg.Bucket, tok+"/"+name, strings.NewReader(string(data)), int64(len(data)), minio.PutObjectOptions{
 		ContentType:  contentType,
-		UserMetadata: map[string]string{"expires": expires.UTC().Format(time.RFC3339)},
+		// "expires" collides with the standard HTTP header, which minio-go
+		// refuses as user metadata; use a custom name.
+		UserMetadata: map[string]string{"link-expires": expires.UTC().Format(time.RFC3339)},
 	})
 	if err != nil {
 		return Link{}, fmt.Errorf("upload %s: %w", name, err)
@@ -153,8 +155,10 @@ func (m *MinIO) Get(ctx context.Context, token, filename string) (*Object, error
 		return nil, ErrNotFound
 	}
 	var expires time.Time
-	if s := st.UserMetadata["Expires"]; s != "" {
-		expires, _ = time.Parse(time.RFC3339, s)
+	for k, v := range st.UserMetadata {
+		if strings.EqualFold(k, "link-expires") {
+			expires, _ = time.Parse(time.RFC3339, v)
+		}
 	}
 	if !expires.IsZero() && m.cfg.Now().After(expires) {
 		obj.Close()
