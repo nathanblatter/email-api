@@ -15,6 +15,9 @@ marketing features, tracking) is out of scope.
   `docker-services_default` network. Postfix's `sender_canonical` map keeps `@nathanblatter.com`
   senders and rewrites everything else to noreply@ (`~/docker-services/postfix-sender-canonical`).
 - Fallback: imessage-api on the host (`http://100.79.61.79:8899`).
+- Large attachments: `internal/files` uploads to the shared MinIO bucket `email-files` (lifecycle-expired)
+  and `api.Files` serves `/f/{token}/{name}` on the public listener `:4501`; the compose `tunnel`
+  service publishes it as `file.nathanblatter.com`. The keyed API on `:4500` stays Tailscale-only.
 
 ## Verify
 `gofmt -l . && go vet ./... && go test ./...` — the Dockerfile runs the same, so the image is the gate.

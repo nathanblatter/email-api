@@ -49,6 +49,12 @@ Auth: `X-API-Key: …` (or `Authorization: Bearer …`). Base URL on the tailnet
 - `content_id` makes an attachment inline (`multipart/related`), referenced from HTML as `cid:<id>`.
 - `headers` adds extra headers (threading, priority, List-Unsubscribe…). Core headers can't be overridden.
 - Max message size (after MIME encoding): `EMAIL_MAX_MESSAGE_MB`, default 10 (Brevo's limit).
+- **Large files become download links.** Any attachment with `as_link: true`, and (largest first)
+  whatever is needed to bring the message under the limit, is uploaded to MinIO and replaced by an
+  expiring link (`EMAIL_FILES_TTL`, default 30 days) appended to the text and HTML bodies and
+  returned in the response as `links`. Links are served from `https://file.nathanblatter.com/f/<token>/<name>`
+  by a separate public listener (`:4501`, behind a Cloudflare tunnel) that knows only that route.
+  Single files up to `EMAIL_MAX_UPLOAD_MB` (default 1024). Inline (`content_id`) images are never linked.
 
 Responses:
 
@@ -69,6 +75,7 @@ curl -H "X-API-Key: $KEY" http://100.79.61.79:4500/send \
 ```
 
 Every file field becomes an attachment; the content type is inferred from the filename.
+Add `-F as_link=report.pdf` (or `-F as_link=all`) to force download links.
 
 ### POST /send/batch
 
@@ -96,6 +103,7 @@ Register in `~/.claude.json`:
 | Redis unreachable | budget counted in-process; `/health` reports `quota: redis-unreachable` |
 | iMessage API down | outage is only logged; `/health` reports `imessage: down` |
 | Message older than `EMAIL_SPOOL_MAX_AGE` | moved to `/data/spool/dead/`, phone paged |
+| MinIO unreachable at start | mail still sends; oversized attachments are rejected with a clear error until restart |
 
 ## Config
 

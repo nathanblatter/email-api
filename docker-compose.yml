@@ -21,7 +21,17 @@ services:
       IMESSAGE_API_KEY: ${IMESSAGE_API_KEY}
       IMESSAGE_FALLBACK_RECIPIENT: ${IMESSAGE_FALLBACK_RECIPIENT}
       EMAIL_MAX_MESSAGE_MB: ${EMAIL_MAX_MESSAGE_MB:-10}
+      EMAIL_MAX_UPLOAD_MB: ${EMAIL_MAX_UPLOAD_MB:-1024}
       EMAIL_SPOOL_MAX_AGE: ${EMAIL_SPOOL_MAX_AGE:-48h}
+      # Large attachments → expiring download links served from MinIO (docker-services)
+      # through the public listener on :4501, which the tunnel below exposes as
+      # https://file.nathanblatter.com. Leave MINIO_* unset to disable links.
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      EMAIL_FILES_BUCKET: ${EMAIL_FILES_BUCKET:-email-files}
+      EMAIL_FILES_PUBLIC_URL: ${EMAIL_FILES_PUBLIC_URL:-https://file.nathanblatter.com}
+      EMAIL_FILES_TTL: ${EMAIL_FILES_TTL:-720h}
       TZ: America/Denver
     volumes:
       - spool:/data
@@ -34,6 +44,16 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  # Public hostname file.nathanblatter.com → app:4501 (download links only).
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - app
 
 volumes:
   spool:

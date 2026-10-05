@@ -19,6 +19,7 @@ type attachmentIn struct {
 	ContentBase64 string `json:"content_base64" jsonschema:"file bytes, base64-encoded"`
 	ContentType   string `json:"content_type,omitempty" jsonschema:"MIME type; inferred from the filename when omitted"`
 	ContentID     string `json:"content_id,omitempty" jsonschema:"set to embed inline and reference from HTML as cid:<id>"`
+	AsLink        bool   `json:"as_link,omitempty" jsonschema:"upload and send an expiring download link instead of attaching (automatic when the message would exceed the size limit)"`
 }
 
 type sendIn struct {
@@ -44,7 +45,7 @@ func (in sendIn) toMessage() (*mail.Message, error) {
 		if err := json.Unmarshal([]byte(`"`+a.ContentBase64+`"`), &content); err != nil {
 			return nil, &mail.ValidationError{Msg: "attachment " + a.Filename + ": content_base64 is not valid base64"}
 		}
-		m.Attachments = append(m.Attachments, mail.Attachment{Filename: a.Filename, ContentType: a.ContentType, Content: content, ContentID: a.ContentID})
+		m.Attachments = append(m.Attachments, mail.Attachment{Filename: a.Filename, ContentType: a.ContentType, Content: content, ContentID: a.ContentID, AsLink: a.AsLink})
 	}
 	return m, nil
 }

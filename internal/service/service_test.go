@@ -18,6 +18,7 @@ type fakeSender struct {
 	mu   sync.Mutex
 	fail error
 	sent []string
+	raws [][]byte
 }
 
 func (f *fakeSender) Send(_ context.Context, from string, rcpts []string, raw []byte) error {
@@ -27,6 +28,7 @@ func (f *fakeSender) Send(_ context.Context, from string, rcpts []string, raw []
 		return f.fail
 	}
 	f.sent = append(f.sent, strings.Join(rcpts, ","))
+	f.raws = append(f.raws, raw)
 	return nil
 }
 func (f *fakeSender) Ping(context.Context) error { return f.fail }
@@ -58,7 +60,7 @@ func setup(t *testing.T, budget int) (*Service, *fakeSender, *fakePager, *clock)
 	ck := &clock{t: time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)}
 	q := quota.New(budget, "")
 	q.Now = ck.now
-	svc := New(snd, pg, sp, q, slog.Default(), Options{
+	svc := New(snd, pg, sp, q, nil, slog.Default(), Options{
 		Policy:       mail.Policy{DefaultFrom: "noreply@nathanblatter.com", AllowedDomains: []string{"nathanblatter.com"}},
 		SpoolMaxAge:  time.Hour,
 		PageInterval: 10 * time.Minute,

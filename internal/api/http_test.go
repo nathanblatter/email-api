@@ -37,7 +37,7 @@ func newServer(t *testing.T) (*httptest.Server, *fakeSender) {
 	t.Helper()
 	sp, _ := spool.Open(t.TempDir())
 	snd := &fakeSender{}
-	svc := service.New(snd, nil, sp, quota.New(100, ""), slog.Default(), service.Options{
+	svc := service.New(snd, nil, sp, quota.New(100, ""), nil, slog.Default(), service.Options{
 		Policy: mail.Policy{DefaultFrom: "noreply@nathanblatter.com", AllowedDomains: []string{"nathanblatter.com"}, MaxBytes: 1 << 20},
 	})
 	srv := httptest.NewServer(New(svc, "secret", 1<<20, slog.Default(), nil))

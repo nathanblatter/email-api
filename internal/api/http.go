@@ -18,12 +18,14 @@ import (
 type Server struct {
 	svc      *service.Service
 	apiKey   string
-	maxBytes int64
+	maxBytes int64 // request body cap: must admit files that will become links
 	log      *slog.Logger
 }
 
-func New(svc *service.Service, apiKey string, maxBytes int64, log *slog.Logger, mcp http.Handler) http.Handler {
-	s := &Server{svc: svc, apiKey: apiKey, maxBytes: maxBytes, log: log}
+// New builds the keyed API. maxUpload is the request-body cap (larger than
+// the message limit, since oversized attachments become download links).
+func New(svc *service.Service, apiKey string, maxUpload int64, log *slog.Logger, mcp http.Handler) http.Handler {
+	s := &Server{svc: svc, apiKey: apiKey, maxBytes: maxUpload, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", s.health)
 	mux.Handle("POST /send", s.auth(http.HandlerFunc(s.send)))
@@ -69,9 +71,9 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 func (s *Server) parseMessage(r *http.Request) (*mail.Message, error) {
 	ct := r.Header.Get("Content-Type")
 	// Base64 inflates attachments by ~4/3; allow that plus headroom.
-	r.Body = http.MaxBytesReader(nil, r.Body, s.maxBytes*3/2+1<<20)
+	r.Body = http.MaxBytesReader(nil, r.Body, s.maxBytes*4/3+1<<20)
 	if strings.HasPrefix(ct, "multipart/form-data") {
-		if err := r.ParseMultipartForm(32 << 20); err != nil {
+		if err := r.ParseMultipartForm(64 << 20); err != nil {
 			return nil, &mail.ValidationError{Msg: "bad multipart form: " + err.Error()}
 		}
 		f := r.MultipartForm
@@ -84,6 +86,12 @@ func (s *Server) parseMessage(r *http.Request) (*mail.Message, error) {
 			Subject: first(f.Value["subject"]),
 			Text:    first(f.Value["text"]),
 			HTML:    first(f.Value["html"]),
+		}
+		asLink := map[string]bool{}
+		for _, v := range f.Value["as_link"] {
+			for _, n := range strings.Split(v, ",") {
+				asLink[strings.TrimSpace(n)] = true
+			}
 		}
 		for _, fhs := range f.File {
 			for _, fh := range fhs {
@@ -100,7 +108,8 @@ func (s *Server) parseMessage(r *http.Request) (*mail.Message, error) {
 				if ctype == "application/octet-stream" {
 					ctype = "" // generic client default; let the filename decide
 				}
-				m.Attachments = append(m.Attachments, mail.Attachment{Filename: fh.Filename, ContentType: ctype, Content: b})
+				m.Attachments = append(m.Attachments, mail.Attachment{Filename: fh.Filename, ContentType: ctype, Content: b,
+					AsLink: asLink["all"] || asLink[fh.Filename]})
 			}
 		}
 		return m, nil
@@ -156,7 +165,7 @@ type batchResponse struct {
 }
 
 func (s *Server) sendBatch(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(nil, r.Body, s.maxBytes*3+1<<20)
+	r.Body = http.MaxBytesReader(nil, r.Body, s.maxBytes*4/3+1<<20)
 	var req batchRequest
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()

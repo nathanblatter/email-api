@@ -57,6 +57,20 @@ type Attachment struct {
 	// ContentID makes the part inline (multipart/related) so HTML can
 	// reference it as <img src="cid:...">.
 	ContentID string `json:"content_id,omitempty"`
+	// AsLink uploads the file and puts an expiring download link in the body
+	// instead of attaching it. Also done automatically when the message would
+	// exceed the size limit.
+	AsLink bool `json:"as_link,omitempty"`
+}
+
+// EncodedSize estimates how many bytes the message will occupy once MIME
+// encoded (base64 inflates attachments by 4/3 plus line breaks).
+func (m *Message) EncodedSize() int64 {
+	n := int64(len(m.Text)+len(m.HTML)) + 2048
+	for _, a := range m.Attachments {
+		n += int64(len(a.Content))*4/3 + int64(len(a.Content))/57*2 + 256
+	}
+	return n
 }
 
 // Message is the wire format for POST /send and the send_email MCP tool.
