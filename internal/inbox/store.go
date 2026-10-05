@@ -222,21 +222,33 @@ func (s *PG) Save(ctx context.Context, p *Parsed, envFrom, envTo string, raw []b
 	}
 	m := fromParsed(id, p, envFrom, envTo, len(raw), s.now())
 	m.RawKey = id + "/raw.eml"
+	// Objects go up before the row is written; if the insert fails the
+	// Worker retries with a fresh id, so remove what this attempt uploaded.
+	var uploaded []string
+	cleanup := func() {
+		for _, k := range uploaded {
+			_ = s.s3.RemoveObject(context.Background(), s.bucket, k, minio.RemoveObjectOptions{})
+		}
+	}
 	if _, err := s.s3.PutObject(ctx, s.bucket, m.RawKey, bytes.NewReader(raw), int64(len(raw)), minio.PutObjectOptions{ContentType: "message/rfc822"}); err != nil {
 		return nil, fmt.Errorf("store raw: %w", err)
 	}
+	uploaded = append(uploaded, m.RawKey)
 	for i, a := range p.Attachments {
 		aid, _ := newID()
 		key := fmt.Sprintf("%s/%d-%s", id, i, safeName(a.Filename))
 		if _, err := s.s3.PutObject(ctx, s.bucket, key, bytes.NewReader(a.Content), int64(len(a.Content)), minio.PutObjectOptions{ContentType: a.ContentType}); err != nil {
+			cleanup()
 			return nil, fmt.Errorf("store attachment %s: %w", a.Filename, err)
 		}
+		uploaded = append(uploaded, key)
 		m.Attachments = append(m.Attachments, AttachmentMeta{ID: aid, Filename: a.Filename, ContentType: a.ContentType,
 			Size: len(a.Content), ContentID: a.ContentID, Inline: a.Inline, ObjectKey: key})
 	}
 	hdr, _ := json.Marshal(m.Headers)
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
+		cleanup()
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
@@ -246,15 +258,18 @@ func (s *PG) Save(ctx context.Context, p *Parsed, envFrom, envTo string, raw []b
 		m.ID, m.ReceivedAt, m.Date, m.EnvFrom, m.EnvTo, m.FromName, m.FromAddr, m.To, m.Cc, m.ReplyTo, m.Subject, m.Text, m.HTML,
 		m.MessageID, m.InReplyTo, m.References, hdr, m.SPF, m.DKIM, m.DMARC, m.Suspicious, m.Size, m.RawKey)
 	if err != nil {
+		cleanup()
 		return nil, fmt.Errorf("insert message: %w", err)
 	}
 	for _, a := range m.Attachments {
 		if _, err := tx.Exec(ctx, `INSERT INTO inbox_attachments (id, message_id, filename, content_type, size, content_id, inline, object_key)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, a.ID, m.ID, a.Filename, a.ContentType, a.Size, a.ContentID, a.Inline, a.ObjectKey); err != nil {
+			cleanup()
 			return nil, fmt.Errorf("insert attachment: %w", err)
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
+		cleanup()
 		return nil, err
 	}
 	return m, nil
