@@ -9,13 +9,17 @@ import (
 	"strconv"
 
 	"github.com/nathanblatter/email-api/internal/files"
+	"github.com/nathanblatter/email-api/internal/inbox"
 )
 
-// Files is the public download listener: no auth, one route, nothing else.
-// It is what the Cloudflare tunnel points at; the keyed API never leaves the
-// tailnet.
-func Files(store files.Store, log *slog.Logger) http.Handler {
+// Files is the public listener: no API key, two routes (downloads and the
+// secret-guarded inbound hook), nothing else. It is what the Cloudflare
+// tunnel points at; the keyed API never leaves the tailnet.
+func Files(store files.Store, in *inbox.Service, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
+	if in != nil {
+		mux.Handle("POST /inbound", Inbound(in, log))
+	}
 	mux.HandleFunc("GET /f/{token}/{name}", func(w http.ResponseWriter, r *http.Request) {
 		obj, err := store.Get(r.Context(), r.PathValue("token"), r.PathValue("name"))
 		if err != nil {

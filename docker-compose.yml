@@ -32,6 +32,12 @@ services:
       EMAIL_FILES_BUCKET: ${EMAIL_FILES_BUCKET:-email-files}
       EMAIL_FILES_PUBLIC_URL: ${EMAIL_FILES_PUBLIC_URL:-https://file.nathanblatter.com}
       EMAIL_FILES_TTL: ${EMAIL_FILES_TTL:-720h}
+      # Inbox: Cloudflare Email Routing → worker/ → POST /inbound (public listener).
+      # Messages in Postgres (db created on first start), attachments + raw .eml in MinIO.
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/email}
+      EMAIL_INBOUND_SECRET: ${EMAIL_INBOUND_SECRET}
+      EMAIL_INBOX_BUCKET: ${EMAIL_INBOX_BUCKET:-email-inbox}
+      EMAIL_INBOX_NOTIFY: ${EMAIL_INBOX_NOTIFY:-true}
       TZ: America/Denver
     volumes:
       - spool:/data

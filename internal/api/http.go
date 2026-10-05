@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/nathanblatter/email-api/internal/inbox"
 	"github.com/nathanblatter/email-api/internal/mail"
 	"github.com/nathanblatter/email-api/internal/service"
 )
@@ -24,9 +25,10 @@ type Server struct {
 
 // New builds the keyed API. maxUpload is the request-body cap (larger than
 // the message limit, since oversized attachments become download links).
-func New(svc *service.Service, apiKey string, maxUpload int64, log *slog.Logger, mcp http.Handler) http.Handler {
+func New(svc *service.Service, apiKey string, maxUpload int64, log *slog.Logger, mcp http.Handler, in *inbox.Service) http.Handler {
 	s := &Server{svc: svc, apiKey: apiKey, maxBytes: maxUpload, log: log}
 	mux := http.NewServeMux()
+	s.mountInbox(mux, in)
 	mux.HandleFunc("GET /health", s.health)
 	mux.Handle("POST /send", s.auth(http.HandlerFunc(s.send)))
 	mux.Handle("POST /send/batch", s.auth(http.HandlerFunc(s.sendBatch)))

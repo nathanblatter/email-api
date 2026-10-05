@@ -18,6 +18,7 @@ import (
 	"github.com/nathanblatter/email-api/internal/config"
 	"github.com/nathanblatter/email-api/internal/fallback"
 	"github.com/nathanblatter/email-api/internal/files"
+	"github.com/nathanblatter/email-api/internal/inbox"
 	"github.com/nathanblatter/email-api/internal/mail"
 	"github.com/nathanblatter/email-api/internal/mcpserver"
 	"github.com/nathanblatter/email-api/internal/quota"
@@ -87,9 +88,27 @@ func main() {
 	defer stop()
 	go svc.RunRetries(ctx, cfg.RetryInterval)
 
-	handler := api.New(svc, cfg.APIKey, cfg.MaxUploadBytes, log, mcpserver.NewHandler(svc, Version))
+	var in *inbox.Service
+	if cfg.InboxEnabled() {
+		initCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		pg, err := inbox.OpenPG(initCtx, inbox.PGConfig{DatabaseURL: cfg.DatabaseURL, MinIOEndpoint: cfg.MinIOEndpoint,
+			MinIOAccessKey: cfg.MinIOAccessKey, MinIOSecretKey: cfg.MinIOSecretKey, MinIOSecure: cfg.MinIOSecure, Bucket: cfg.InboxBucket})
+		cancel()
+		if err != nil {
+			// Receiving is a hard dependency once configured: a silent inbox is
+			// worse than a loud restart loop.
+			log.Error("inbox store", "err", err)
+			os.Exit(1)
+		}
+		defer pg.Close()
+		in = &inbox.Service{Store: pg, Secret: cfg.InboundSecret, Pager: pager, Notify: cfg.InboxNotify, Log: log}
+	} else {
+		log.Warn("inbox not configured (EMAIL_INBOUND_SECRET / DATABASE_URL / MINIO_*); receiving disabled")
+	}
+
+	handler := api.New(svc, cfg.APIKey, cfg.MaxUploadBytes, log, mcpserver.NewHandler(svc, in, Version), in)
 	srv := &http.Server{Addr: cfg.Addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
-	pub := &http.Server{Addr: cfg.FilesAddr, Handler: api.Files(store, log), ReadHeaderTimeout: 10 * time.Second}
+	pub := &http.Server{Addr: cfg.FilesAddr, Handler: api.Files(store, in, log), ReadHeaderTimeout: 10 * time.Second}
 
 	go func() {
 		<-ctx.Done()
@@ -108,7 +127,7 @@ func main() {
 	log.Info("email-api listening", "addr", cfg.Addr, "version", Version, "relay", cfg.SMTPAddr(),
 		"default_from", cfg.DefaultFrom, "allowed_domains", cfg.AllowedFromDomains,
 		"daily_budget", cfg.DailyBudget, "quota", q.Backend(), "spool", cfg.SpoolDir, "imessage_fallback", pager != nil,
-		"files", store.Configured(), "files_addr", cfg.FilesAddr, "files_url", cfg.FilesPublicURL)
+		"files", store.Configured(), "files_addr", cfg.FilesAddr, "files_url", cfg.FilesPublicURL, "inbox", in != nil)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Error("server", "err", err)
 		os.Exit(1)

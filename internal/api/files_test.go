@@ -20,7 +20,7 @@ func TestFilesDownload(t *testing.T) {
 	if !strings.HasPrefix(link.URL, "https://file.nathanblatter.com/f/") || !strings.HasSuffix(link.URL, "/report%20q.pdf") {
 		t.Fatalf("url %s", link.URL)
 	}
-	srv := httptest.NewServer(Files(store, slog.Default()))
+	srv := httptest.NewServer(Files(store, nil, slog.Default()))
 	defer srv.Close()
 
 	path := strings.TrimPrefix(link.URL, "https://file.nathanblatter.com")

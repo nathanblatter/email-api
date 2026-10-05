@@ -26,7 +26,7 @@ func TestToolsOverStreamableHTTP(t *testing.T) {
 	svc := service.New(snd, nil, sp, quota.New(100, ""), nil, slog.Default(), service.Options{
 		Policy: mail.Policy{DefaultFrom: "noreply@nathanblatter.com", AllowedDomains: []string{"nathanblatter.com"}},
 	})
-	srv := httptest.NewServer(NewHandler(svc, "test"))
+	srv := httptest.NewServer(NewHandler(svc, nil, "test"))
 	defer srv.Close()
 
 	ctx := context.Background()

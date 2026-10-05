@@ -1,0 +1,10 @@
+# Cloudflare Email Worker: receives every message for nathanblatter.com
+# (Email Routing catch-all → this worker) and hands the raw bytes to email-api.
+# Deployed by .github/workflows/deploy.yml with CLOUDFLARE_API_TOKEN from the
+# host's ~/deploy/email-api/.env. Secret INBOUND_SECRET is set the same way.
+name = "email-inbound"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+INBOUND_URL = "https://file.nathanblatter.com/inbound"

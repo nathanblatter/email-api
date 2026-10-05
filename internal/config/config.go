@@ -49,6 +49,19 @@ type Config struct {
 	FilesBucket    string
 	FilesPublicURL string
 	FilesTTL       time.Duration
+
+	// Inbox: Cloudflare Email Routing → Email Worker → POST /inbound on the
+	// public listener. Messages in Postgres, attachments + raw .eml in MinIO.
+	// Empty InboundSecret or DatabaseURL → inbox disabled.
+	InboundSecret string
+	DatabaseURL   string
+	InboxBucket   string
+	InboxNotify   bool // page the phone on new (non-suspicious) mail
+}
+
+// InboxEnabled reports whether receiving is configured.
+func (c Config) InboxEnabled() bool {
+	return c.InboundSecret != "" && c.DatabaseURL != "" && c.MinIOEndpoint != "" && c.MinIOAccessKey != "" && c.MinIOSecretKey != ""
 }
 
 // FilesEnabled reports whether download links are configured.
@@ -75,6 +88,10 @@ func FromEnv() (Config, error) {
 		MinIOSecure:        os.Getenv("MINIO_SECURE") == "true",
 		FilesBucket:        env("EMAIL_FILES_BUCKET", "email-files"),
 		FilesPublicURL:     os.Getenv("EMAIL_FILES_PUBLIC_URL"),
+		InboundSecret:      os.Getenv("EMAIL_INBOUND_SECRET"),
+		DatabaseURL:        os.Getenv("DATABASE_URL"),
+		InboxBucket:        env("EMAIL_INBOX_BUCKET", "email-inbox"),
+		InboxNotify:        env("EMAIL_INBOX_NOTIFY", "true") != "false",
 	}
 	if c.APIKey == "" {
 		return c, fmt.Errorf("EMAIL_API_KEY is required")

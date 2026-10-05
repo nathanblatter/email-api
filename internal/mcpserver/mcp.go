@@ -10,6 +10,7 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/nathanblatter/email-api/internal/inbox"
 	"github.com/nathanblatter/email-api/internal/mail"
 	"github.com/nathanblatter/email-api/internal/service"
 )
@@ -56,7 +57,10 @@ type batchIn struct {
 
 type emptyIn struct{}
 
-type handlers struct{ svc *service.Service }
+type handlers struct {
+	svc *service.Service
+	in  *inbox.Service // nil when receiving is not configured
+}
 
 func addTool[In, Out any](s *mcpsdk.Server, t *mcpsdk.Tool, fn func(context.Context, In) (Out, error)) {
 	mcpsdk.AddTool(s, t, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in In) (*mcpsdk.CallToolResult, any, error) {
@@ -73,8 +77,8 @@ func addTool[In, Out any](s *mcpsdk.Server, t *mcpsdk.Tool, fn func(context.Cont
 }
 
 // NewHandler builds the MCP server and returns its streamable-HTTP handler.
-func NewHandler(svc *service.Service, version string) http.Handler {
-	h := &handlers{svc: svc}
+func NewHandler(svc *service.Service, in *inbox.Service, version string) http.Handler {
+	h := &handlers{svc: svc, in: in}
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "email", Version: version}, nil)
 
 	addTool(server, &mcpsdk.Tool{Name: "send_email",
@@ -123,5 +127,8 @@ func NewHandler(svc *service.Service, version string) http.Handler {
 			return map[string]int{"delivered": d, "remaining": r, "dead": dead}, nil
 		})
 
+	if in != nil {
+		h.registerInbox(server)
+	}
 	return mcpsdk.NewStreamableHTTPHandler(func(*http.Request) *mcpsdk.Server { return server }, nil)
 }

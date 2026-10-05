@@ -35,6 +35,20 @@ jobs:
             if [ "$STATUS" = "healthy" ]; then
               echo "Healthy. Deployed ${GITHUB_SHA::7}."
               docker image prune -f --filter label=none >/dev/null 2>&1 || true
+
+              # Inbound Email Worker. Token + secret come from the host .env, never from GitHub.
+              export CLOUDFLARE_API_TOKEN=$(grep -E '^CLOUDFLARE_API_TOKEN=' .env | cut -d= -f2-)
+              export CLOUDFLARE_ACCOUNT_ID=$(grep -E '^CLOUDFLARE_ACCOUNT_ID=' .env | cut -d= -f2-)
+              INBOUND_SECRET=$(grep -E '^EMAIL_INBOUND_SECRET=' .env | cut -d= -f2-)
+              if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$INBOUND_SECRET" ]; then
+                export PATH=/opt/homebrew/opt/node@24/bin:/opt/homebrew/bin:$PATH
+                cd worker && npm ci --silent
+                npx wrangler deploy
+                printf '%s' "$INBOUND_SECRET" | npx wrangler secret put INBOUND_SECRET
+                echo "Email Worker deployed."
+              else
+                echo "Skipping worker deploy (CLOUDFLARE_API_TOKEN / EMAIL_INBOUND_SECRET unset)."
+              fi
               exit 0
             fi
             echo "  status: ${STATUS:-starting} ($i/24)"

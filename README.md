@@ -94,6 +94,30 @@ Register in `~/.claude.json`:
 "email": {"type": "http", "url": "http://100.79.61.79:4500/mcp", "headers": {"X-API-Key": "…"}}
 ```
 
+## Inbox (receiving)
+
+Cloudflare Email Routing catches every address on nathanblatter.com and runs the Email Worker in
+`worker/`, which POSTs the raw message to `https://file.nathanblatter.com/inbound` (public listener,
+shared secret `EMAIL_INBOUND_SECRET`). email-api parses it, stores the message in Postgres
+(`DATABASE_URL`, database created on first start) and the attachments plus the raw `.eml` in the
+MinIO bucket `email-inbox`, then texts the phone a preview (`EMAIL_INBOX_NOTIFY`). Mail that passes
+neither SPF nor DKIM is kept but flagged `suspicious` and hidden from default listings.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET    | `/inbox?limit=&unread=true&q=&suspicious=true\|all&before=` | newest first; `unread` count included |
+| GET    | `/inbox/{id}` | full message: bodies, headers, threading ids, attachments |
+| GET    | `/inbox/{id}/attachments/{aid}` | attachment bytes |
+| POST   | `/inbox/{id}/read?read=false` | mark read / unread |
+| DELETE | `/inbox/{id}` | delete message + stored files |
+
+MCP: `list_inbox`, `read_email`, `get_email_attachment` (≤5 MB inlined), `mark_email_read`, `delete_email`.
+To reply, call `send_email` with `headers: {"In-Reply-To": "<message_id>", "References": "<message_id>"}`.
+
+If email-api or the tunnel is down the Worker throws, Cloudflare tempfails the sender, and the
+sending server retries later, so nothing is lost. The Worker is deployed by CI from the host's
+`CLOUDFLARE_API_TOKEN`; the catch-all rule was set once via the Cloudflare API.
+
 ## Failure modes
 
 | Situation | Behaviour |
@@ -104,6 +128,7 @@ Register in `~/.claude.json`:
 | iMessage API down | outage is only logged; `/health` reports `imessage: down` |
 | Message older than `EMAIL_SPOOL_MAX_AGE` | moved to `/data/spool/dead/`, phone paged |
 | MinIO unreachable at start | mail still sends; oversized attachments are rejected with a clear error until restart |
+| Postgres/MinIO unreachable at start (inbox configured) | process exits so the restart policy retries; meanwhile the Worker tempfails senders, who retry |
 
 ## Config
 
