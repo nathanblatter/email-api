@@ -392,7 +392,9 @@ func (s *PG) Unread(ctx context.Context) (int, error) {
 func fromParsed(id string, p *Parsed, envFrom, envTo string, size int, now time.Time) *Message {
 	m := &Message{ID: id, ReceivedAt: now, EnvFrom: envFrom, EnvTo: envTo, Subject: p.Subject, Text: p.Text, HTML: p.HTML,
 		MessageID: p.MessageID, InReplyTo: p.InReplyTo, References: p.References, Headers: p.Headers,
-		SPF: p.SPF, DKIM: p.DKIM, DMARC: p.DMARC, Suspicious: p.Suspicious(), Size: size, To: []string{}, Attachments: []AttachmentMeta{}}
+		SPF: p.SPF, DKIM: p.DKIM, DMARC: p.DMARC, Suspicious: p.Suspicious(), Size: size,
+		// Non-nil slices: pgx encodes a nil []string as NULL, which the NOT NULL columns reject.
+		To: []string{}, Cc: []string{}, Attachments: []AttachmentMeta{}}
 	if !p.Date.IsZero() {
 		d := p.Date
 		m.Date = &d

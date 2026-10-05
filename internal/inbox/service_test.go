@@ -51,6 +51,9 @@ func TestReceiveStoresAndNotifies(t *testing.T) {
 
 	// Suspicious mail is stored but not paged, and hidden when filtering.
 	m2, _ := svc.Receive(context.Background(), []byte("From: spam@evil.test\r\nSubject: buy\r\n\r\nx"), "", "nathan@nathanblatter.com")
+	if m2.Cc == nil || m2.To == nil || m2.Headers == nil {
+		t.Fatalf("slices/maps must be non-nil for the NOT NULL columns: %+v", m2)
+	}
 	if !m2.Suspicious || len(pg.pages) != 1 {
 		t.Fatalf("suspicious handling: %+v pages=%d", m2, len(pg.pages))
 	}
