@@ -1,0 +1,45 @@
+services:
+  app:
+    build: .
+    image: email-api:latest
+    restart: unless-stopped
+    ports:
+      # Tailscale-only, like imessage-api (8899) and flightdeck (4300).
+      - "100.79.61.79:4500:4500"
+    environment:
+      EMAIL_API_KEY: ${EMAIL_API_KEY}
+      # The house postfix relay (docker-services) → Brevo. Same hop personal-site uses.
+      SMTP_HOST: ${SMTP_HOST:-postfix}
+      SMTP_PORT: ${SMTP_PORT:-25}
+      EMAIL_DEFAULT_FROM: ${EMAIL_DEFAULT_FROM:-Nathan Blatter <noreply@nathanblatter.com>}
+      EMAIL_ALLOWED_FROM_DOMAINS: ${EMAIL_ALLOWED_FROM_DOMAINS:-nathanblatter.com}
+      # Brevo free tier is 300 recipients/day; keep headroom for personal-site's own sends.
+      EMAIL_DAILY_BUDGET: ${EMAIL_DAILY_BUDGET:-250}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/3}
+      # Outage paging through the iMessage bridge on the Mac Mini host.
+      IMESSAGE_API_URL: ${IMESSAGE_API_URL:-http://100.79.61.79:8899}
+      IMESSAGE_API_KEY: ${IMESSAGE_API_KEY}
+      IMESSAGE_FALLBACK_RECIPIENT: ${IMESSAGE_FALLBACK_RECIPIENT}
+      EMAIL_MAX_MESSAGE_MB: ${EMAIL_MAX_MESSAGE_MB:-10}
+      EMAIL_SPOOL_MAX_AGE: ${EMAIL_SPOOL_MAX_AGE:-48h}
+      TZ: America/Denver
+    volumes:
+      - spool:/data
+    networks:
+      - default
+      - services
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4500/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  spool:
+
+networks:
+  # Reach postfix and redis by service name on the shared infra network.
+  services:
+    external: true
+    name: docker-services_default
