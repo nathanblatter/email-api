@@ -6,7 +6,9 @@
 # host split and rate limiter rely on.
 {
 	auto_https off
-	admin off
+	# Admin stays on (loopback inside the container) so deploys can `caddy
+	# reload` a changed Caddyfile without recreating the edge.
+	admin localhost:2019
 }
 
 :4500 {
@@ -16,12 +18,16 @@
 			port 4500
 			refresh 1s
 		}
-		lb_retries 3
-		lb_try_duration 5s
-		fail_duration 10s
+		# A retired container's address lingers in DNS for up to the refresh
+		# interval; fail it fast and retry the other upstream so no request
+		# is lost across a rollover.
+		lb_retries 6
+		lb_try_duration 6s
+		lb_try_interval 100ms
+		fail_duration 5s
 		max_fails 1
 		transport http {
-			dial_timeout 2s
+			dial_timeout 400ms
 		}
 	}
 }
@@ -36,12 +42,16 @@
 			port 4501
 			refresh 1s
 		}
-		lb_retries 3
-		lb_try_duration 5s
-		fail_duration 10s
+		# A retired container's address lingers in DNS for up to the refresh
+		# interval; fail it fast and retry the other upstream so no request
+		# is lost across a rollover.
+		lb_retries 6
+		lb_try_duration 6s
+		lb_try_interval 100ms
+		fail_duration 5s
 		max_fails 1
 		transport http {
-			dial_timeout 2s
+			dial_timeout 400ms
 		}
 	}
 }

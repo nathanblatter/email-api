@@ -19,8 +19,10 @@ jobs:
           # before compiling, so a red suite never produces an image.
           docker compose build --build-arg VERSION="${GITHUB_SHA::7}" api
 
-          # Edge + tunnel: idempotent, only recreated when their config changes.
-          docker compose up -d app tunnel
+          # Edge + tunnel: never recreated by a routine deploy (that would drop
+          # the port). A changed Caddyfile is hot-reloaded instead.
+          docker compose up -d --no-recreate app tunnel
+          docker compose exec -T app caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile || echo "caddy reload skipped"
 
           # Zero-downtime: run the new api beside the old one, switch once the
           # new one is healthy, then retire the old. The edge round-robins by
