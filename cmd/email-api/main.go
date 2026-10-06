@@ -21,6 +21,7 @@ import (
 	"github.com/nathanblatter/email-api/internal/inbox"
 	"github.com/nathanblatter/email-api/internal/mail"
 	"github.com/nathanblatter/email-api/internal/mcpserver"
+	"github.com/nathanblatter/email-api/internal/oauth"
 	"github.com/nathanblatter/email-api/internal/quota"
 	"github.com/nathanblatter/email-api/internal/service"
 	"github.com/nathanblatter/email-api/internal/spool"
@@ -89,9 +90,11 @@ func main() {
 	go svc.RunRetries(ctx, cfg.RetryInterval)
 
 	var in *inbox.Service
+	var pg *inbox.PG
 	if cfg.InboxEnabled() {
 		initCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		pg, err := inbox.OpenPG(initCtx, inbox.PGConfig{DatabaseURL: cfg.DatabaseURL, MinIOEndpoint: cfg.MinIOEndpoint,
+		var err error
+		pg, err = inbox.OpenPG(initCtx, inbox.PGConfig{DatabaseURL: cfg.DatabaseURL, MinIOEndpoint: cfg.MinIOEndpoint,
 			MinIOAccessKey: cfg.MinIOAccessKey, MinIOSecretKey: cfg.MinIOSecretKey, MinIOSecure: cfg.MinIOSecure, Bucket: cfg.InboxBucket})
 		cancel()
 		if err != nil {
@@ -106,7 +109,33 @@ func main() {
 		log.Warn("inbox not configured (EMAIL_INBOUND_SECRET / DATABASE_URL / MINIO_*); receiving disabled")
 	}
 
-	handler := api.New(svc, cfg.APIKey, cfg.MaxUploadBytes, log, mcpserver.NewHandler(svc, in, Version), in)
+	mcpHandler := mcpserver.NewHandler(svc, in, Version)
+	var handler http.Handler = api.New(svc, cfg.APIKey, cfg.MaxUploadBytes, log, mcpHandler, in)
+
+	// Public connector (phone / claude.ai): OAuth + bearer-only /mcp on the
+	// public hostname; everything else stays Tailscale-only. Enforced in-app
+	// by Host, so a misconfigured tunnel cannot widen exposure.
+	if cfg.PublicURL != "" {
+		if pg == nil {
+			log.Error("EMAIL_PUBLIC_URL needs the inbox database (DATABASE_URL) for OAuth token storage")
+			os.Exit(1)
+		}
+		initCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		ost, err := oauth.OpenPG(initCtx, pg.Pool())
+		cancel()
+		if err != nil {
+			log.Error("oauth store", "err", err)
+			os.Exit(1)
+		}
+		osrv := oauth.New(ost, cfg.PublicURL, cfg.APIKey, log)
+		pub, host, err := oauth.PublicHandler(osrv, cfg.PublicURL, mcpHandler)
+		if err != nil {
+			log.Error("public connector", "err", err)
+			os.Exit(1)
+		}
+		handler = oauth.SplitByHost(host, pub, handler)
+		log.Info("public connector enabled (OAuth + bearer /mcp only)", "host", host)
+	}
 	srv := &http.Server{Addr: cfg.Addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	pub := &http.Server{Addr: cfg.FilesAddr, Handler: api.Files(store, in, log), ReadHeaderTimeout: 10 * time.Second}
 

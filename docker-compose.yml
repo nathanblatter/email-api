@@ -38,6 +38,8 @@ services:
       EMAIL_INBOUND_SECRET: ${EMAIL_INBOUND_SECRET}
       EMAIL_INBOX_BUCKET: ${EMAIL_INBOX_BUCKET:-email-inbox}
       EMAIL_INBOX_NOTIFY: ${EMAIL_INBOX_NOTIFY:-true}
+      # claude.ai / phone connector: OAuth + bearer-only /mcp on this hostname (tunnel → app:4500).
+      EMAIL_PUBLIC_URL: ${EMAIL_PUBLIC_URL:-https://email.nathanblatter.com}
       TZ: America/Denver
     volumes:
       - spool:/data

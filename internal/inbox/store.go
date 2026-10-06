@@ -213,6 +213,10 @@ func ensureDatabase(ctx context.Context, dsn string) error {
 
 func (s *PG) Close() { s.pool.Close() }
 
+// Pool exposes the connection pool so other tables in the same database
+// (OAuth clients/tokens) can share it.
+func (s *PG) Pool() *pgxpool.Pool { return s.pool }
+
 func (s *PG) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
 
 func (s *PG) Save(ctx context.Context, p *Parsed, envFrom, envTo string, raw []byte) (*Message, error) {

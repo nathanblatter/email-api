@@ -57,6 +57,11 @@ type Config struct {
 	DatabaseURL   string
 	InboxBucket   string
 	InboxNotify   bool // page the phone on new (non-suspicious) mail
+
+	// PublicURL enables the claude.ai connector surface: an OAuth 2.1 server
+	// plus a bearer-only /mcp, served only when the request's Host is this
+	// hostname (the tunnel preserves it). Needs DATABASE_URL for token storage.
+	PublicURL string
 }
 
 // InboxEnabled reports whether receiving is configured.
@@ -92,6 +97,7 @@ func FromEnv() (Config, error) {
 		DatabaseURL:        os.Getenv("DATABASE_URL"),
 		InboxBucket:        env("EMAIL_INBOX_BUCKET", "email-inbox"),
 		InboxNotify:        env("EMAIL_INBOX_NOTIFY", "true") != "false",
+		PublicURL:          strings.TrimRight(os.Getenv("EMAIL_PUBLIC_URL"), "/"),
 	}
 	if c.APIKey == "" {
 		return c, fmt.Errorf("EMAIL_API_KEY is required")
