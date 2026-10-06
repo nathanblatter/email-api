@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nathanblatter/email-api/internal/auth"
 	"github.com/nathanblatter/email-api/internal/mail"
 	"github.com/nathanblatter/email-api/internal/quota"
 	"github.com/nathanblatter/email-api/internal/service"
@@ -40,7 +41,7 @@ func newServer(t *testing.T) (*httptest.Server, *fakeSender) {
 	svc := service.New(snd, nil, sp, quota.New(100, ""), nil, slog.Default(), service.Options{
 		Policy: mail.Policy{DefaultFrom: "noreply@nathanblatter.com", AllowedDomains: []string{"nathanblatter.com"}, MaxBytes: 1 << 20},
 	})
-	srv := httptest.NewServer(New(svc, "secret", 1<<20, slog.Default(), nil, nil))
+	srv := httptest.NewServer(New(svc, auth.NewStatic("secret"), 1<<20, slog.Default(), nil, nil))
 	t.Cleanup(srv.Close)
 	return srv, snd
 }

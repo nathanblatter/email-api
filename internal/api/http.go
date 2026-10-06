@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/nathanblatter/email-api/internal/auth"
 	"github.com/nathanblatter/email-api/internal/inbox"
 	"github.com/nathanblatter/email-api/internal/mail"
 	"github.com/nathanblatter/email-api/internal/service"
@@ -19,15 +20,15 @@ import (
 
 type Server struct {
 	svc      *service.Service
-	apiKey   string
+	keys     auth.Keys
 	maxBytes int64 // request body cap: must admit files that will become links
 	log      *slog.Logger
 }
 
 // New builds the keyed API. maxUpload is the request-body cap (larger than
 // the message limit, since oversized attachments become download links).
-func New(svc *service.Service, apiKey string, maxUpload int64, log *slog.Logger, mcp http.Handler, in *inbox.Service) http.Handler {
-	s := &Server{svc: svc, apiKey: apiKey, maxBytes: maxUpload, log: log}
+func New(svc *service.Service, keys auth.Keys, maxUpload int64, log *slog.Logger, mcp http.Handler, in *inbox.Service) http.Handler {
+	s := &Server{svc: svc, keys: keys, maxBytes: maxUpload, log: log}
 	mux := http.NewServeMux()
 	// The inbox web app: static files only, no key needed to load the shell;
 	// every data call it makes goes through the keyed routes below.
@@ -45,19 +46,16 @@ func New(svc *service.Service, apiKey string, maxUpload int64, log *slog.Logger,
 	return mux
 }
 
+// auth resolves the key to an actor and stores it on the context so sends
+// and reads are attributed to the consumer that made them.
 func (s *Server) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		key := r.Header.Get("X-API-Key")
-		if key == "" {
-			if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
-				key = strings.TrimPrefix(h, "Bearer ")
-			}
-		}
-		if key == "" || key != s.apiKey {
+		actor, ok := s.keys.Lookup(r.Context(), auth.Extract(r))
+		if !ok {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return
 		}
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(auth.WithActor(r.Context(), actor)))
 	})
 }
 

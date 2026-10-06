@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nathanblatter/email-api/internal/auth"
 	"github.com/nathanblatter/email-api/internal/fallback"
 	"github.com/nathanblatter/email-api/internal/files"
 	"github.com/nathanblatter/email-api/internal/mail"
@@ -215,7 +216,7 @@ func (s *Service) deliver(ctx context.Context, p *mail.Prepared) (Result, error)
 			shortErr(err), s.opt.SpoolMaxAge, p.From.Address, strings.Join(rcpts, ", "), p.Subject, entry.Preview))
 		return Result{ID: p.ID, Status: "queued", Recipients: rcpts, Reason: string(entry.Reason), Fallback: fb, Error: err.Error()}, nil
 	}
-	s.log.Info("sent", "id", p.ID, "from", p.From.Address, "to", rcpts, "subject", p.Subject)
+	s.log.Info("sent", "id", p.ID, "actor", auth.ActorFrom(ctx), "from", p.From.Address, "to", rcpts, "subject", p.Subject)
 	return Result{ID: p.ID, Status: "sent", Recipients: rcpts}, nil
 }
 

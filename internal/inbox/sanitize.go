@@ -56,6 +56,7 @@ var (
 	hiddenAttr   = regexp.MustCompile(`(?i)\s(hidden|aria-hidden\s*=\s*["']?true)`)
 	styleAttr    = regexp.MustCompile(`(?i)\sstyle\s*=\s*["']([^"']*)["']`)
 	multiSpaceRe = regexp.MustCompile(`[ \t]{2,}`)
+	condComment  = regexp.MustCompile(`^(\[if [^\]]*\]>?\s*)?(<!\[endif\]|\[endif\])?\s*(<!)?$|^\[if [^\]]*\]>\s*<!$`)
 )
 
 // StripHiddenHTML removes comments and elements a human would not see and
@@ -63,9 +64,12 @@ var (
 func StripHiddenHTML(h string) (clean string, hidden []string) {
 	add := func(s string) {
 		s = strings.TrimSpace(multiSpaceRe.ReplaceAllString(anyTag.ReplaceAllString(s, " "), " "))
-		if s != "" {
-			hidden = append(hidden, s)
+		// Outlook conditional-comment markers ("[if mso]>", "<![endif]") are
+		// plumbing, not hidden prose.
+		if s == "" || condComment.MatchString(s) {
+			return
 		}
+		hidden = append(hidden, s)
 	}
 	clean = htmlComment.ReplaceAllStringFunc(h, func(c string) string {
 		add(strings.TrimSuffix(strings.TrimPrefix(c, "<!--"), "-->"))

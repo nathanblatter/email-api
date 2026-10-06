@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nathanblatter/email-api/internal/auth"
 	"github.com/nathanblatter/email-api/internal/ratelimit"
 )
 
@@ -35,17 +36,18 @@ const (
 type Server struct {
 	St     Store
 	Issuer string
-	// APIKey is the login credential; checked in constant time via its hash.
-	apiKeyHash string
-	limiter    *ratelimit.IPLimiter
-	log        *slog.Logger
+	// Keys resolves the API key pasted on the login page to an actor name;
+	// tokens inherit that name so phone activity is attributed.
+	Keys    auth.Keys
+	limiter *ratelimit.IPLimiter
+	log     *slog.Logger
 }
 
-func New(st Store, issuer, apiKey string, log *slog.Logger) *Server {
+func New(st Store, issuer string, keys auth.Keys, log *slog.Logger) *Server {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Server{St: st, Issuer: strings.TrimRight(issuer, "/"), apiKeyHash: HashKey(apiKey),
+	return &Server{St: st, Issuer: strings.TrimRight(issuer, "/"), Keys: keys,
 		limiter: ratelimit.New(0.5, 10), log: log}
 }
 
@@ -271,7 +273,8 @@ func (s *Server) authorizeSubmit(w http.ResponseWriter, r *http.Request) {
 		retry("Paste the email-api key to continue.")
 		return
 	}
-	if !EqualHash(HashKey(raw), s.apiKeyHash) {
+	actor, ok := s.Keys.Lookup(r.Context(), raw)
+	if !ok {
 		s.log.Warn("oauth: bad key on authorize", "ip", ratelimit.ClientIP(r), "client", clientLabel(c))
 		retry("That key is not valid.")
 		return
@@ -286,12 +289,12 @@ func (s *Server) authorizeSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.St.CreateCode(r.Context(), HashKey(code), Code{ClientID: c.ID, RedirectURI: p.RedirectURI, Challenge: p.Challenge,
-		Scope: Scope, ExpiresAt: time.Now().Add(codeTTL)}); err != nil {
+		Scope: Scope, Actor: actor, ExpiresAt: time.Now().Add(codeTTL)}); err != nil {
 		s.log.Error("oauth store code", "err", err)
 		retry("Could not issue a code; try again.")
 		return
 	}
-	s.log.Info("oauth: authorized client", "client", clientLabel(c))
+	s.log.Info("oauth: authorized client", "client", clientLabel(c), "actor", actor)
 	redirectWith(w, r, p.RedirectURI, url.Values{"code": {code}, "state": {p.State}})
 }
 
@@ -390,7 +393,7 @@ func (s *Server) exchangeCode(w http.ResponseWriter, r *http.Request, c Client) 
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "code does not match this client, redirect_uri, or code_verifier")
 		return
 	}
-	s.mint(w, r, c.ID, row.Scope)
+	s.mint(w, r, c.ID, row.Scope, row.Actor)
 }
 
 func (s *Server) refresh(w http.ResponseWriter, r *http.Request, c Client) {
@@ -412,10 +415,10 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request, c Client) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "refresh token belongs to another client")
 		return
 	}
-	s.mint(w, r, c.ID, row.Scope)
+	s.mint(w, r, c.ID, row.Scope, row.Actor)
 }
 
-func (s *Server) mint(w http.ResponseWriter, r *http.Request, clientID, scope string) {
+func (s *Server) mint(w http.ResponseWriter, r *http.Request, clientID, scope, actor string) {
 	access, err1 := randomToken("emat_")
 	refresh, err2 := randomToken("emrt_")
 	id, err3 := randomToken("emtk_")
@@ -424,7 +427,7 @@ func (s *Server) mint(w http.ResponseWriter, r *http.Request, clientID, scope st
 		return
 	}
 	now := time.Now()
-	if err := s.St.CreateToken(r.Context(), HashKey(access), HashKey(refresh), Token{ID: id, ClientID: clientID, Scope: scope,
+	if err := s.St.CreateToken(r.Context(), HashKey(access), HashKey(refresh), Token{ID: id, ClientID: clientID, Scope: scope, Actor: actor,
 		AccessExp: now.Add(accessTTL), RefreshExp: now.Add(refreshTTL)}); err != nil {
 		s.log.Error("oauth store token", "err", err)
 		writeOAuthError(w, http.StatusInternalServerError, "server_error", "could not store token")
@@ -442,8 +445,8 @@ func (s *Server) Bearer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := r.Header.Get("Authorization")
 		if strings.HasPrefix(h, "Bearer ") {
-			if _, err := s.St.GetTokenByAccess(r.Context(), HashKey(strings.TrimPrefix(h, "Bearer "))); err == nil {
-				next.ServeHTTP(w, r)
+			if t, err := s.St.GetTokenByAccess(r.Context(), HashKey(strings.TrimPrefix(h, "Bearer "))); err == nil {
+				next.ServeHTTP(w, r.WithContext(auth.WithActor(r.Context(), t.Actor)))
 				return
 			}
 		}

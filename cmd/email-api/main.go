@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nathanblatter/email-api/internal/api"
+	"github.com/nathanblatter/email-api/internal/auth"
 	"github.com/nathanblatter/email-api/internal/config"
 	"github.com/nathanblatter/email-api/internal/fallback"
 	"github.com/nathanblatter/email-api/internal/files"
@@ -41,6 +42,9 @@ func main() {
 	if err != nil {
 		log.Error("config", "err", err)
 		os.Exit(1)
+	}
+	if len(os.Args) > 1 {
+		os.Exit(keysCLI(cfg, os.Args[1:]))
 	}
 	sp, err := spool.Open(cfg.SpoolDir)
 	if err != nil {
@@ -91,6 +95,7 @@ func main() {
 
 	var in *inbox.Service
 	var pg *inbox.PG
+	var keys auth.Keys = auth.NewStatic(cfg.APIKey)
 	if cfg.InboxEnabled() {
 		initCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		var err error
@@ -104,13 +109,21 @@ func main() {
 			os.Exit(1)
 		}
 		defer pg.Close()
+		kctx, kcancel := context.WithTimeout(context.Background(), 10*time.Second)
+		pk, err := auth.OpenPG(kctx, pg.Pool(), cfg.APIKey)
+		kcancel()
+		if err != nil {
+			log.Error("api keys", "err", err)
+			os.Exit(1)
+		}
+		keys = pk
 		in = &inbox.Service{Store: pg, Secret: cfg.InboundSecret, Pager: pager, Notify: cfg.InboxNotify, Log: log}
 	} else {
 		log.Warn("inbox not configured (EMAIL_INBOUND_SECRET / DATABASE_URL / MINIO_*); receiving disabled")
 	}
 
 	mcpHandler := mcpserver.NewHandler(svc, in, Version)
-	var handler http.Handler = api.New(svc, cfg.APIKey, cfg.MaxUploadBytes, log, mcpHandler, in)
+	var handler http.Handler = api.New(svc, keys, cfg.MaxUploadBytes, log, mcpHandler, in)
 
 	// Public connector (phone / claude.ai): OAuth + bearer-only /mcp on the
 	// public hostname; everything else stays Tailscale-only. Enforced in-app
@@ -127,7 +140,7 @@ func main() {
 			log.Error("oauth store", "err", err)
 			os.Exit(1)
 		}
-		osrv := oauth.New(ost, cfg.PublicURL, cfg.APIKey, log)
+		osrv := oauth.New(ost, cfg.PublicURL, keys, log)
 		pub, host, err := oauth.PublicHandler(osrv, cfg.PublicURL, mcpHandler)
 		if err != nil {
 			log.Error("public connector", "err", err)

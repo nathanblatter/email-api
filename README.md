@@ -23,6 +23,18 @@ over budget, mail is spooled until the next UTC day instead of bouncing.
 
 Auth: `X-API-Key: …` (or `Authorization: Bearer …`). Base URL on the tailnet: `http://100.79.61.79:4500`.
 
+**Keys per consumer.** Besides `EMAIL_API_KEY` (actor `env`, kept for bootstrap), mint one named key per
+consumer so logs, OAuth tokens and the audit trail say who acted:
+
+```bash
+docker compose exec app email-api keygen natebot   # prints the secret once
+docker compose exec app email-api keys             # list (never secrets)
+docker compose exec app email-api revoke natebot   # its OAuth tokens stop resolving too
+```
+
+Keys are stored hashed in the inbox database. The OAuth login page accepts any active key; tokens inherit
+its name.
+
 ### POST /send (JSON)
 
 ```json

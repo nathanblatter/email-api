@@ -26,14 +26,15 @@ type Client struct {
 }
 
 type Code struct {
-	ClientID, RedirectURI, Challenge, Scope string
-	ExpiresAt                               time.Time
+	ClientID, RedirectURI, Challenge, Scope, Actor string
+	ExpiresAt                                      time.Time
 }
 
 type Token struct {
 	ID         string
 	ClientID   string
 	Scope      string
+	Actor      string // name of the API key the user signed in with
 	AccessExp  time.Time
 	RefreshExp time.Time
 }
@@ -77,6 +78,8 @@ CREATE TABLE IF NOT EXISTS oauth_codes (
   expires_at     TIMESTAMPTZ NOT NULL,
   used           BOOLEAN NOT NULL DEFAULT false
 );
+ALTER TABLE oauth_codes ADD COLUMN IF NOT EXISTS actor TEXT NOT NULL DEFAULT 'env';
+ALTER TABLE oauth_tokens ADD COLUMN IF NOT EXISTS actor TEXT NOT NULL DEFAULT 'env';
 CREATE TABLE IF NOT EXISTS oauth_tokens (
   id                 TEXT PRIMARY KEY,
   client_id          TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,
@@ -116,8 +119,8 @@ func (s *PG) GetClient(ctx context.Context, id string) (Client, error) {
 }
 
 func (s *PG) CreateCode(ctx context.Context, codeHash string, c Code) error {
-	_, err := s.pool.Exec(ctx, `INSERT INTO oauth_codes (code_hash, client_id, redirect_uri, code_challenge, scope, expires_at) VALUES ($1,$2,$3,$4,$5,$6)`,
-		codeHash, c.ClientID, c.RedirectURI, c.Challenge, c.Scope, c.ExpiresAt)
+	_, err := s.pool.Exec(ctx, `INSERT INTO oauth_codes (code_hash, client_id, redirect_uri, code_challenge, scope, expires_at, actor) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		codeHash, c.ClientID, c.RedirectURI, c.Challenge, c.Scope, c.ExpiresAt, c.Actor)
 	return err
 }
 
@@ -126,8 +129,8 @@ func (s *PG) CreateCode(ctx context.Context, codeHash string, c Code) error {
 func (s *PG) ConsumeCode(ctx context.Context, codeHash string) (Code, error) {
 	var c Code
 	err := s.pool.QueryRow(ctx, `UPDATE oauth_codes SET used=true WHERE code_hash=$1 AND NOT used AND expires_at > now()
-		RETURNING client_id, redirect_uri, code_challenge, scope, expires_at`, codeHash).
-		Scan(&c.ClientID, &c.RedirectURI, &c.Challenge, &c.Scope, &c.ExpiresAt)
+		RETURNING client_id, redirect_uri, code_challenge, scope, expires_at, actor`, codeHash).
+		Scan(&c.ClientID, &c.RedirectURI, &c.Challenge, &c.Scope, &c.ExpiresAt, &c.Actor)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return c, ErrNotFound
 	}
@@ -135,16 +138,16 @@ func (s *PG) ConsumeCode(ctx context.Context, codeHash string) (Code, error) {
 }
 
 func (s *PG) CreateToken(ctx context.Context, accessHash, refreshHash string, t Token) error {
-	_, err := s.pool.Exec(ctx, `INSERT INTO oauth_tokens (id, client_id, access_hash, refresh_hash, scope, access_expires_at, refresh_expires_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)`, t.ID, t.ClientID, accessHash, refreshHash, t.Scope, t.AccessExp, t.RefreshExp)
+	_, err := s.pool.Exec(ctx, `INSERT INTO oauth_tokens (id, client_id, access_hash, refresh_hash, scope, access_expires_at, refresh_expires_at, actor)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, t.ID, t.ClientID, accessHash, refreshHash, t.Scope, t.AccessExp, t.RefreshExp, t.Actor)
 	return err
 }
 
 func (s *PG) GetTokenByAccess(ctx context.Context, accessHash string) (Token, error) {
 	var t Token
 	err := s.pool.QueryRow(ctx, `UPDATE oauth_tokens SET last_used_at=now() WHERE access_hash=$1 AND NOT revoked AND access_expires_at > now()
-		RETURNING id, client_id, scope, access_expires_at, refresh_expires_at`, accessHash).
-		Scan(&t.ID, &t.ClientID, &t.Scope, &t.AccessExp, &t.RefreshExp)
+		RETURNING id, client_id, scope, access_expires_at, refresh_expires_at, actor`, accessHash).
+		Scan(&t.ID, &t.ClientID, &t.Scope, &t.AccessExp, &t.RefreshExp, &t.Actor)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return t, ErrNotFound
 	}
@@ -156,8 +159,8 @@ func (s *PG) GetTokenByAccess(ctx context.Context, accessHash string) (Token, er
 func (s *PG) ConsumeRefresh(ctx context.Context, refreshHash string) (Token, error) {
 	var t Token
 	err := s.pool.QueryRow(ctx, `UPDATE oauth_tokens SET revoked=true WHERE refresh_hash=$1 AND NOT revoked AND refresh_expires_at > now()
-		RETURNING id, client_id, scope, access_expires_at, refresh_expires_at`, refreshHash).
-		Scan(&t.ID, &t.ClientID, &t.Scope, &t.AccessExp, &t.RefreshExp)
+		RETURNING id, client_id, scope, access_expires_at, refresh_expires_at, actor`, refreshHash).
+		Scan(&t.ID, &t.ClientID, &t.Scope, &t.AccessExp, &t.RefreshExp, &t.Actor)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return t, ErrNotFound
 	}

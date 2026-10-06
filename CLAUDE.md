@@ -25,6 +25,12 @@ marketing features and tracking are out of scope.
   and `api.Files` serves `/f/{token}/{name}` on the public listener `:4501`; the compose `tunnel`
   service publishes it as `file.nathanblatter.com`. The keyed API on `:4500` stays Tailscale-only.
 
+## Keys
+Named API keys live hashed in the inbox db (`api_keys`); `EMAIL_API_KEY` stays valid as actor `env`.
+Mint per consumer with `docker compose exec app email-api keygen <name>` in `~/deploy/email-api`;
+`email-api keys` lists, `email-api revoke <name>` kills the key and its OAuth tokens. Every send logs
+`actor=`; OAuth tokens carry the key name they were minted with.
+
 ## Verify
 `gofmt -l . && go vet ./... && go test ./...` — the Dockerfile runs the same, so the image is the gate.
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nathanblatter/email-api/internal/auth"
 	"github.com/nathanblatter/email-api/internal/inbox"
 	"github.com/nathanblatter/email-api/internal/mail"
 	"github.com/nathanblatter/email-api/internal/quota"
@@ -27,7 +28,7 @@ func TestInboundAndInboxRoutes(t *testing.T) {
 	sp, _ := spool.Open(t.TempDir())
 	svc := service.New(&fakeSender{}, nil, sp, quota.New(100, ""), nil, slog.Default(), service.Options{
 		Policy: mail.Policy{DefaultFrom: "noreply@nathanblatter.com", AllowedDomains: []string{"nathanblatter.com"}}})
-	api := httptest.NewServer(New(svc, "secret", 1<<20, slog.Default(), nil, in))
+	api := httptest.NewServer(New(svc, auth.NewStatic("secret"), 1<<20, slog.Default(), nil, in))
 	defer api.Close()
 
 	post := func(secret string, body string) (int, map[string]any) {

@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/nathanblatter/email-api/internal/auth"
 )
 
 func noRedirect() *http.Client {
@@ -19,7 +21,7 @@ func noRedirect() *http.Client {
 
 func TestFullFlowAndHostSplit(t *testing.T) {
 	st := NewMemory()
-	srv := New(st, "https://email.example.com", "the-key", slog.Default())
+	srv := New(st, "https://email.example.com", auth.NewStatic("the-key"), slog.Default())
 	mcp := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("mcp ok")) })
 	pub, host, err := PublicHandler(srv, "https://email.example.com", mcp)
 	if err != nil || host != "email.example.com" {
