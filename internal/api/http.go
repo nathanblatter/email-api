@@ -14,6 +14,7 @@ import (
 	"github.com/nathanblatter/email-api/internal/inbox"
 	"github.com/nathanblatter/email-api/internal/mail"
 	"github.com/nathanblatter/email-api/internal/service"
+	"github.com/nathanblatter/email-api/internal/ui"
 )
 
 type Server struct {
@@ -28,6 +29,9 @@ type Server struct {
 func New(svc *service.Service, apiKey string, maxUpload int64, log *slog.Logger, mcp http.Handler, in *inbox.Service) http.Handler {
 	s := &Server{svc: svc, apiKey: apiKey, maxBytes: maxUpload, log: log}
 	mux := http.NewServeMux()
+	// The inbox web app: static files only, no key needed to load the shell;
+	// every data call it makes goes through the keyed routes below.
+	mux.Handle("/", ui.Handler())
 	s.mountInbox(mux, in)
 	mux.HandleFunc("GET /health", s.health)
 	mux.Handle("POST /send", s.auth(http.HandlerFunc(s.send)))
