@@ -175,7 +175,7 @@ kbd {
 .row .prev { grid-column: 2 / span 2; color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row .clip { color: var(--muted); margin-left: 6px; vertical-align: -2px; }
 .list-foot { padding: 10px 14px; border-top: 1px solid var(--line); }
-.list-foot:empty { display: none; }
+.list-foot:not(:has(> :not([hidden]))) { display: none; }
 .empty { margin: 0; color: var(--muted); }
 
 /* ── reader ───────────────────────────────────────────── */

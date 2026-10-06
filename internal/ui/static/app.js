@@ -137,10 +137,13 @@
       <base target="_blank"><style>body{margin:0;padding:4px;font:16px/1.5 -apple-system,Helvetica,Arial,sans-serif;color:#111;overflow-wrap:anywhere}img{max-width:100%;height:auto}</style></head>
       <body>${html}</body></html>`;
     const f = document.createElement("iframe");
-    f.setAttribute("sandbox", "allow-popups allow-popups-to-escape-sandbox");
+    // allow-same-origin only so the height can be read; scripts stay
+    // disabled by the sandbox and by the CSP inside the document.
+    f.setAttribute("sandbox", "allow-same-origin allow-popups allow-popups-to-escape-sandbox");
     f.setAttribute("referrerpolicy", "no-referrer");
     f.srcdoc = doc;
-    f.addEventListener("load", () => { try { f.style.height = Math.min(4000, f.contentDocument.documentElement.scrollHeight + 16) + "px"; } catch (_) {} });
+    const fit = () => { try { f.style.height = Math.min(6000, f.contentDocument.documentElement.scrollHeight + 24) + "px"; } catch (_) {} };
+    f.addEventListener("load", () => { fit(); setTimeout(fit, 400); setTimeout(fit, 1500); });
     body.appendChild(f);
   }
   $("load-images").addEventListener("click", () => { state.imagesLoaded = true; renderBody(); });
