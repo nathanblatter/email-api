@@ -21,31 +21,36 @@ var ErrNotFound = errors.New("message not found")
 
 // Message is the stored form. Attachments are listed without content.
 type Message struct {
-	ID          string            `json:"id"`
-	ReceivedAt  time.Time         `json:"received_at"`
-	Date        *time.Time        `json:"date,omitempty"`
-	EnvFrom     string            `json:"envelope_from"`
-	EnvTo       string            `json:"envelope_to"`
-	FromName    string            `json:"from_name,omitempty"`
-	FromAddr    string            `json:"from"`
-	To          []string          `json:"to"`
-	Cc          []string          `json:"cc,omitempty"`
-	ReplyTo     string            `json:"reply_to,omitempty"`
-	Subject     string            `json:"subject"`
-	Text        string            `json:"text,omitempty"`
-	HTML        string            `json:"html,omitempty"`
-	MessageID   string            `json:"message_id,omitempty"`
-	InReplyTo   string            `json:"in_reply_to,omitempty"`
-	References  string            `json:"references,omitempty"`
-	Headers     map[string]string `json:"headers,omitempty"`
-	SPF         string            `json:"spf,omitempty"`
-	DKIM        string            `json:"dkim,omitempty"`
-	DMARC       string            `json:"dmarc,omitempty"`
-	Suspicious  bool              `json:"suspicious"`
-	Read        bool              `json:"read"`
-	Size        int               `json:"size"`
-	RawKey      string            `json:"-"`
-	Attachments []AttachmentMeta  `json:"attachments"`
+	ID         string            `json:"id"`
+	ReceivedAt time.Time         `json:"received_at"`
+	Date       *time.Time        `json:"date,omitempty"`
+	EnvFrom    string            `json:"envelope_from"`
+	EnvTo      string            `json:"envelope_to"`
+	FromName   string            `json:"from_name,omitempty"`
+	FromAddr   string            `json:"from"`
+	To         []string          `json:"to"`
+	Cc         []string          `json:"cc,omitempty"`
+	ReplyTo    string            `json:"reply_to,omitempty"`
+	Subject    string            `json:"subject"`
+	Text       string            `json:"text,omitempty"`
+	HTML       string            `json:"html,omitempty"`
+	MessageID  string            `json:"message_id,omitempty"`
+	InReplyTo  string            `json:"in_reply_to,omitempty"`
+	References string            `json:"references,omitempty"`
+	Headers    map[string]string `json:"headers,omitempty"`
+	SPF        string            `json:"spf,omitempty"`
+	DKIM       string            `json:"dkim,omitempty"`
+	DMARC      string            `json:"dmarc,omitempty"`
+	Suspicious bool              `json:"suspicious"` // auth failed OR injection suspected
+	// Injection is the sanitize verdict; Reasons say why. HiddenText is
+	// content that was in the HTML but invisible to a human reader.
+	Injection   bool             `json:"injection_suspected"`
+	Reasons     []string         `json:"injection_reasons,omitempty"`
+	HiddenText  []string         `json:"hidden_text,omitempty"`
+	Read        bool             `json:"read"`
+	Size        int              `json:"size"`
+	RawKey      string           `json:"-"`
+	Attachments []AttachmentMeta `json:"attachments"`
 }
 
 type AttachmentMeta struct {
@@ -69,6 +74,7 @@ type Summary struct {
 	Preview     string    `json:"preview"`
 	Read        bool      `json:"read"`
 	Suspicious  bool      `json:"suspicious"`
+	Injection   bool      `json:"injection_suspected"`
 	Attachments int       `json:"attachments"`
 }
 
@@ -147,6 +153,9 @@ CREATE TABLE IF NOT EXISTS inbox_attachments (
   object_key   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS inbox_attachments_message_idx ON inbox_attachments (message_id);
+ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS injection BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS injection_reasons TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS hidden_text TEXT[] NOT NULL DEFAULT '{}';
 `
 
 // OpenPG connects, creating the database and tables if they do not exist.
@@ -257,10 +266,12 @@ func (s *PG) Save(ctx context.Context, p *Parsed, envFrom, envTo string, raw []b
 	}
 	defer tx.Rollback(ctx)
 	_, err = tx.Exec(ctx, `INSERT INTO inbox_messages (id, received_at, date, envelope_from, envelope_to, from_name, from_addr, to_addrs, cc_addrs,
-		reply_to, subject, text_body, html_body, message_id, in_reply_to, refs, headers, spf, dkim, dmarc, suspicious, size, raw_key)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
+		reply_to, subject, text_body, html_body, message_id, in_reply_to, refs, headers, spf, dkim, dmarc, suspicious, size, raw_key,
+		injection, injection_reasons, hidden_text)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
 		m.ID, m.ReceivedAt, m.Date, m.EnvFrom, m.EnvTo, m.FromName, m.FromAddr, m.To, m.Cc, m.ReplyTo, m.Subject, m.Text, m.HTML,
-		m.MessageID, m.InReplyTo, m.References, hdr, m.SPF, m.DKIM, m.DMARC, m.Suspicious, m.Size, m.RawKey)
+		m.MessageID, m.InReplyTo, m.References, hdr, m.SPF, m.DKIM, m.DMARC, m.Suspicious, m.Size, m.RawKey,
+		m.Injection, m.Reasons, m.HiddenText)
 	if err != nil {
 		cleanup()
 		return nil, fmt.Errorf("insert message: %w", err)
@@ -283,7 +294,7 @@ func (s *PG) List(ctx context.Context, o ListOptions) ([]Summary, error) {
 	if o.Limit <= 0 || o.Limit > 200 {
 		o.Limit = 50
 	}
-	q := `SELECT m.id, m.received_at, m.from_name, m.from_addr, m.to_addrs, m.subject, left(m.text_body, 200), m.read, m.suspicious,
+	q := `SELECT m.id, m.received_at, m.from_name, m.from_addr, m.to_addrs, m.subject, left(m.text_body, 200), m.read, m.suspicious, m.injection,
 	        (SELECT count(*) FROM inbox_attachments a WHERE a.message_id = m.id)
 	      FROM inbox_messages m WHERE 1=1`
 	var args []any
@@ -313,7 +324,7 @@ func (s *PG) List(ctx context.Context, o ListOptions) ([]Summary, error) {
 	out := []Summary{}
 	for rows.Next() {
 		var r Summary
-		if err := rows.Scan(&r.ID, &r.ReceivedAt, &r.FromName, &r.FromAddr, &r.To, &r.Subject, &r.Preview, &r.Read, &r.Suspicious, &r.Attachments); err != nil {
+		if err := rows.Scan(&r.ID, &r.ReceivedAt, &r.FromName, &r.FromAddr, &r.To, &r.Subject, &r.Preview, &r.Read, &r.Suspicious, &r.Injection, &r.Attachments); err != nil {
 			return nil, err
 		}
 		r.Preview = strings.TrimSpace(r.Preview)
@@ -326,10 +337,11 @@ func (s *PG) Get(ctx context.Context, id string) (*Message, error) {
 	m := &Message{}
 	var hdr []byte
 	err := s.pool.QueryRow(ctx, `SELECT id, received_at, date, envelope_from, envelope_to, from_name, from_addr, to_addrs, cc_addrs, reply_to,
-		subject, text_body, html_body, message_id, in_reply_to, refs, headers, spf, dkim, dmarc, suspicious, read, size, raw_key
+		subject, text_body, html_body, message_id, in_reply_to, refs, headers, spf, dkim, dmarc, suspicious, read, size, raw_key,
+		injection, injection_reasons, hidden_text
 		FROM inbox_messages WHERE id=$1`, id).Scan(&m.ID, &m.ReceivedAt, &m.Date, &m.EnvFrom, &m.EnvTo, &m.FromName, &m.FromAddr, &m.To, &m.Cc,
 		&m.ReplyTo, &m.Subject, &m.Text, &m.HTML, &m.MessageID, &m.InReplyTo, &m.References, &hdr, &m.SPF, &m.DKIM, &m.DMARC, &m.Suspicious,
-		&m.Read, &m.Size, &m.RawKey)
+		&m.Read, &m.Size, &m.RawKey, &m.Injection, &m.Reasons, &m.HiddenText)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -409,11 +421,19 @@ func (s *PG) Unread(ctx context.Context) (int, error) {
 // ── shared helpers ──────────────────────────────────────────────────────────
 
 func fromParsed(id string, p *Parsed, envFrom, envTo string, size int, now time.Time) *Message {
-	m := &Message{ID: id, ReceivedAt: now, EnvFrom: envFrom, EnvTo: envTo, Subject: p.Subject, Text: p.Text, HTML: p.HTML,
+	san := Sanitize(p)
+	m := &Message{ID: id, ReceivedAt: now, EnvFrom: envFrom, EnvTo: envTo, Subject: CleanText(p.Subject), Text: san.Text, HTML: p.HTML,
 		MessageID: p.MessageID, InReplyTo: p.InReplyTo, References: p.References, Headers: p.Headers,
-		SPF: p.SPF, DKIM: p.DKIM, DMARC: p.DMARC, Suspicious: p.Suspicious(), Size: size,
+		SPF: p.SPF, DKIM: p.DKIM, DMARC: p.DMARC, Suspicious: p.Suspicious() || san.Injection, Size: size,
+		Injection: san.Injection, Reasons: san.Reasons, HiddenText: san.HiddenText,
 		// Non-nil slices: pgx encodes a nil []string as NULL, which the NOT NULL columns reject.
 		To: []string{}, Cc: []string{}, Attachments: []AttachmentMeta{}}
+	if m.Reasons == nil {
+		m.Reasons = []string{}
+	}
+	if m.HiddenText == nil {
+		m.HiddenText = []string{}
+	}
 	if !p.Date.IsZero() {
 		d := p.Date
 		m.Date = &d

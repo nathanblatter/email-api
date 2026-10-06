@@ -37,6 +37,10 @@ type Parsed struct {
 	HTML        string
 	Headers     map[string]string // selected headers, lower-cased names
 	Attachments []Attachment
+	// TextFromHTML is set when the message had no plain-text part and Text
+	// was derived from the HTML (so Sanitize must rederive it from the
+	// hidden-stripped HTML instead).
+	TextFromHTML bool
 	// Authentication results as reported by the receiving edge (Cloudflare).
 	SPF, DKIM, DMARC string
 }
@@ -93,6 +97,7 @@ func Parse(raw []byte) (*Parsed, error) {
 	walk(p, msg.Header.Get("Content-Type"), msg.Header.Get("Content-Transfer-Encoding"), msg.Header.Get("Content-Disposition"), msg.Header.Get("Content-ID"), msg.Body, 0)
 	if p.Text == "" && p.HTML != "" {
 		p.Text = htmlToText(p.HTML)
+		p.TextFromHTML = true
 	}
 	return p, nil
 }

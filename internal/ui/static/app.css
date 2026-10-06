@@ -234,6 +234,7 @@ kbd {
   color: var(--ink-2);
   font-size: 13px;
 }
+.notice.is-warn { border-color: var(--warn); background: var(--warn-soft); color: var(--warn); }
 .body { margin-top: 22px; }
 .body .text {
   font-family: var(--serif);

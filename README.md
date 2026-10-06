@@ -112,6 +112,17 @@ neither SPF nor DKIM is kept but flagged `suspicious` and hidden from default li
 | DELETE | `/inbox/{id}` | delete message + stored files |
 
 MCP: `list_inbox`, `read_email`, `get_email_attachment` (≤5 MB inlined), `mark_email_read`, `delete_email`.
+
+**Prompt-injection defence (sanitize stage).** Every received message goes through `inbox.Sanitize` before
+storage: NFKC normalisation and removal of invisible characters (zero-width, bidi overrides, tag characters,
+soft hyphens); HTML comments and elements hidden by style or attribute (`display:none`, zero font size,
+white-on-white, off-screen, `hidden`, `aria-hidden`) are stripped and their text kept separately as
+`hidden_text`; the subject, bodies and hidden text are scanned for instruction-shaped content (ignore-your-
+instructions, "you are an AI", tool-call requests, secret exfiltration, prompt markup, …). Matches set
+`injection_suspected` with `injection_reasons`, mark the message `suspicious` (hidden from default listings,
+no phone page) and the UI shows a warning. MCP reads return a `{"untrusted": true, "notice": …, "data": …}`
+envelope with text only; HTML needs `include_html: true`. None of this makes untrusted text safe for a model;
+it narrows the channel and labels it. Keep send/delete as separate, confirmed steps when agents read mail.
 To reply, call `send_email` with `headers: {"In-Reply-To": "<message_id>", "References": "<message_id>"}`.
 
 If email-api or the tunnel is down the Worker throws, Cloudflare tempfails the sender, and the

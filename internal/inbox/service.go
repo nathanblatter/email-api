@@ -44,7 +44,7 @@ func (s *Service) Receive(ctx context.Context, raw []byte, envFrom, envTo string
 		return nil, err
 	}
 	s.log().Info("inbound stored", "id", m.ID, "from", m.FromAddr, "to", envTo, "subject", m.Subject,
-		"attachments", len(m.Attachments), "suspicious", m.Suspicious, "size", m.Size)
+		"attachments", len(m.Attachments), "suspicious", m.Suspicious, "injection", m.Injection, "reasons", m.Reasons, "size", m.Size)
 	if s.Notify && s.Pager != nil && !m.Suspicious {
 		who := m.FromAddr
 		if m.FromName != "" {

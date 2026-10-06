@@ -68,7 +68,7 @@ func (m *Memory) List(_ context.Context, o ListOptions) ([]Summary, error) {
 			prev = prev[:200]
 		}
 		out = append(out, Summary{ID: msg.ID, ReceivedAt: msg.ReceivedAt, FromName: msg.FromName, FromAddr: msg.FromAddr, To: msg.To,
-			Subject: msg.Subject, Preview: strings.TrimSpace(prev), Read: msg.Read, Suspicious: msg.Suspicious, Attachments: len(msg.Attachments)})
+			Subject: msg.Subject, Preview: strings.TrimSpace(prev), Read: msg.Read, Suspicious: msg.Suspicious, Injection: msg.Injection, Attachments: len(msg.Attachments)})
 	}
 	return out, nil
 }

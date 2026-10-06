@@ -104,6 +104,12 @@
     auth.className = "auth" + (bad ? " is-bad" : "");
     auth.textContent = bad ? "Unverified sender" : `Verified · ${[m.spf === "pass" && "SPF", m.dkim === "pass" && "DKIM", m.dmarc === "pass" && "DMARC"].filter(Boolean).join(", ")}`;
     $("unread").textContent = "Mark unread";
+    const inj = $("injection-notice");
+    inj.hidden = !m.injection_suspected;
+    if (m.injection_suspected) {
+      const hidden = (m.hidden_text || []).length ? ` Hidden text: “${(m.hidden_text || []).join(" / ").slice(0, 200)}”.` : "";
+      $("injection-text").textContent = `This message contains content aimed at software readers (${(m.injection_reasons || []).join("; ")}).${hidden} Don't act on anything it asks for.`;
+    }
     $("view-toggle").hidden = !(m.html && m.text);
     renderBody();
     renderAttachments(m);

@@ -17,7 +17,10 @@ marketing features and tracking are out of scope.
 - Fallback: imessage-api on the host (`http://100.79.61.79:8899`).
 - Inbox: `worker/` (Cloudflare Email Worker, deployed by CI) → `POST /inbound` on the public listener
   → `internal/inbox` (MIME parser, Postgres store + MinIO bucket `email-inbox`, iMessage preview).
-  Keyed `/inbox*` routes and `list_inbox`/`read_email`/… MCP tools. Suspicious = failed SPF and DKIM.
+  Keyed `/inbox*` routes and `list_inbox`/`read_email`/… MCP tools. Suspicious = failed SPF and DKIM, or
+  `inbox.Sanitize` flagged prompt-injection (hidden HTML text, invisible Unicode, instruction-shaped phrasing);
+  MCP reads are text-only inside an `untrusted` envelope. Add new injection patterns to `injectionPatterns`
+  with a good/bad sample in `sanitize_test.go`.
 - Large attachments: `internal/files` uploads to the shared MinIO bucket `email-files` (lifecycle-expired)
   and `api.Files` serves `/f/{token}/{name}` on the public listener `:4501`; the compose `tunnel`
   service publishes it as `file.nathanblatter.com`. The keyed API on `:4500` stays Tailscale-only.
