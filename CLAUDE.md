@@ -27,7 +27,7 @@ marketing features and tracking are out of scope.
 
 ## Keys
 Named API keys live hashed in the inbox db (`api_keys`); `EMAIL_API_KEY` stays valid as actor `env`.
-Mint per consumer with `docker compose exec app email-api keygen <name>` in `~/deploy/email-api`;
+Mint per consumer with `docker compose exec api email-api keygen <name>` in `~/deploy/email-api`;
 `email-api keys` lists, `email-api revoke <name>` kills the key and its OAuth tokens. Every send logs
 `actor=`; OAuth tokens carry the key name they were minted with.
 
@@ -35,8 +35,10 @@ Mint per consumer with `docker compose exec app email-api keygen <name>` in `~/d
 `gofmt -l . && go vet ./... && go test ./...` — the Dockerfile runs the same, so the image is the gate.
 
 ## Deploy
-Push to `main` → `.github/workflows/deploy.yml` on the self-hosted runner → `~/deploy/email-api`
-(`docker compose build && up -d`, health-gated, auto-rollback to `email-api:previous`).
+Push to `main` → `.github/workflows/deploy.yml` on the self-hosted runner → `~/deploy/email-api`:
+build, then `--scale api=2 --no-recreate`, wait for the new container's health, retire the old
+(zero downtime behind the Caddy edge `app`, which owns port 4500 and the tunnel targets). An
+unhealthy new container is removed and the old one keeps serving.
 Never hand-deploy. Runtime secrets live in `~/deploy/email-api/.env` (see `.env.example`); the
 workflow also deploys `worker/` with wrangler using `CLOUDFLARE_API_TOKEN` from that file.
 

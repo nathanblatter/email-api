@@ -27,9 +27,9 @@ Auth: `X-API-Key: …` (or `Authorization: Bearer …`). Base URL on the tailnet
 consumer so logs, OAuth tokens and the audit trail say who acted:
 
 ```bash
-docker compose exec app email-api keygen natebot   # prints the secret once
-docker compose exec app email-api keys             # list (never secrets)
-docker compose exec app email-api revoke natebot   # its OAuth tokens stop resolving too
+docker compose exec api email-api keygen natebot   # prints the secret once
+docker compose exec api email-api keys             # list (never secrets)
+docker compose exec api email-api revoke natebot   # its OAuth tokens stop resolving too
 ```
 
 Keys are stored hashed in the inbox database. The OAuth login page accepts any active key; tokens inherit
@@ -168,5 +168,7 @@ go run ./cmd/email-api   # needs EMAIL_API_KEY; SMTP_HOST=127.0.0.1 to use the h
 
 Push to `main`. The self-hosted runner on the Mac Mini pulls into `~/deploy/email-api`,
 builds the image (the Dockerfile runs gofmt + vet + tests before compiling, so a red
-suite can't produce an image), recreates the container, waits for the health check,
-and rolls back to the previous image if it never comes up.
+suite can't produce an image), then does a zero-downtime rollover: a Caddy edge (`app`)
+owns the port and the tunnel targets, the new `api` container starts beside the old
+one, and the old one is retired only after the new one is healthy. If the new one
+never becomes healthy it is removed and the old keeps serving.

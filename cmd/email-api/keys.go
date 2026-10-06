@@ -20,7 +20,7 @@ import (
 //	email-api keys            list keys (never secrets)
 //	email-api revoke <name>   revoke a key (its OAuth tokens stop resolving too)
 //
-// Run inside the container: docker compose exec app email-api keygen natebot
+// Run inside the container: docker compose exec api email-api keygen natebot
 func keysCLI(cfg config.Config, args []string) int {
 	usage := func() int {
 		fmt.Fprintln(os.Stderr, "usage: email-api keygen <name> | keys | revoke <name>")

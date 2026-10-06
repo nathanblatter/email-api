@@ -1,11 +1,25 @@
 services:
+  # `app` is the edge (Caddy): it owns the Tailscale port and is what the
+  # tunnel targets, so deploys can run two `api` containers side by side.
   app:
-    build: .
-    image: email-api:latest
+    image: caddy:2-alpine
     restart: unless-stopped
     ports:
       # Tailscale-only, like imessage-api (8899) and flightdeck (4300).
       - "100.79.61.79:4500:4500"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - api
+    networks:
+      - default
+
+  # `api` is the Go service. No host port: only the edge reaches it. Scaled to
+  # two during a deploy; the old one is retired once the new one is healthy.
+  api:
+    build: .
+    image: email-api:latest
+    restart: unless-stopped
     environment:
       EMAIL_API_KEY: ${EMAIL_API_KEY}
       # The house postfix relay (docker-services) → Brevo. Same hop personal-site uses.
@@ -53,7 +67,8 @@ services:
       retries: 3
       start_period: 10s
 
-  # Public hostname file.nathanblatter.com → app:4501 (download links only).
+  # Public hostnames file.nathanblatter.com → app:4501 and
+  # email.nathanblatter.com → app:4500 (both land on the edge).
   tunnel:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped

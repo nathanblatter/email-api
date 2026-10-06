@@ -15,25 +15,37 @@ jobs:
           git fetch origin main
           git reset --hard origin/main
 
-          # Keep the current image as a rollback target.
-          if docker image inspect email-api:latest >/dev/null 2>&1; then
-            docker tag email-api:latest email-api:previous
-          fi
-
           # Build = test gate: the Dockerfile runs gofmt, go vet and go test
           # before compiling, so a red suite never produces an image.
-          docker compose build --build-arg VERSION="${GITHUB_SHA::7}" app
+          docker compose build --build-arg VERSION="${GITHUB_SHA::7}" api
 
-          # Single replica (it binds a host port), so this is a recreate with
-          # a health gate and automatic rollback rather than blue/green.
-          # Brings up the tunnel sidecar too (it only starts after app).
-          docker compose up -d
+          # Edge + tunnel: idempotent, only recreated when their config changes.
+          docker compose up -d app tunnel
+
+          # Zero-downtime: run the new api beside the old one, switch once the
+          # new one is healthy, then retire the old. The edge round-robins by
+          # Docker DNS and retries a refused connect, so no request is dropped.
+          OLD_CONTAINER=$(docker compose ps -q api 2>/dev/null | head -1)
+          if [ -z "$OLD_CONTAINER" ]; then
+            echo "No existing api container, starting fresh..."
+            docker compose up -d api
+            NEW_CONTAINER=$(docker compose ps -q api | head -1)
+          else
+            docker compose up -d --scale api=2 --no-recreate api
+            NEW_CONTAINER=$(docker compose ps -q api | grep -v "^${OLD_CONTAINER}$" | head -1)
+            if [ -z "$NEW_CONTAINER" ]; then echo "ERROR: could not identify new container"; exit 1; fi
+          fi
+          echo "Old: ${OLD_CONTAINER:-none} | New: $NEW_CONTAINER"
 
           echo "Waiting for the new container to be healthy..."
           for i in $(seq 1 24); do
-            STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$(docker compose ps -q app)" 2>/dev/null || true)
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$NEW_CONTAINER" 2>/dev/null || true)
             if [ "$STATUS" = "healthy" ]; then
               echo "Healthy. Deployed ${GITHUB_SHA::7}."
+              if [ -n "$OLD_CONTAINER" ]; then
+                docker stop "$OLD_CONTAINER" >/dev/null && docker rm "$OLD_CONTAINER" >/dev/null
+                echo "Old container retired."
+              fi
               docker image prune -f --filter label=none >/dev/null 2>&1 || true
 
               # Inbound Email Worker. Token + secret come from the host .env, never from GitHub.
@@ -50,15 +62,14 @@ jobs:
                 echo "Skipping worker deploy (CLOUDFLARE_API_TOKEN / EMAIL_INBOUND_SECRET unset)."
               fi
               exit 0
+            elif [ "$STATUS" = "unhealthy" ]; then
+              break
             fi
             echo "  status: ${STATUS:-starting} ($i/24)"
             sleep 5
           done
 
-          echo "ERROR: new container never became healthy; rolling back"
-          docker logs --tail 50 "$(docker compose ps -q app)" || true
-          if docker image inspect email-api:previous >/dev/null 2>&1; then
-            docker tag email-api:previous email-api:latest
-            docker compose up -d --no-build app
-          fi
+          echo "ERROR: new container never became healthy; keeping the old one"
+          docker logs --tail 50 "$NEW_CONTAINER" || true
+          docker stop "$NEW_CONTAINER" >/dev/null && docker rm "$NEW_CONTAINER" >/dev/null
           exit 1
