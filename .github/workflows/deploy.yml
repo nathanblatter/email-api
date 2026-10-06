@@ -3,6 +3,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      recreate_edge:
+        description: "Recreate the Caddy edge container (brief port blip; only when its image/compose config changed)"
+        type: boolean
+        default: false
 jobs:
   deploy:
     runs-on: self-hosted
@@ -21,8 +26,13 @@ jobs:
 
           # Edge + tunnel: never recreated by a routine deploy (that would drop
           # the port). A changed Caddyfile is hot-reloaded instead.
-          docker compose up -d --no-recreate app tunnel
-          docker compose exec -T app caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile || echo "caddy reload skipped"
+          if [ "${{ inputs.recreate_edge }}" = "true" ]; then
+            echo "Recreating edge (requested)"
+            docker compose up -d --force-recreate app
+          else
+            docker compose up -d --no-recreate app tunnel
+            docker compose exec -T app caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile || echo "caddy reload skipped"
+          fi
 
           # Zero-downtime: run the new api beside the old one, switch once the
           # new one is healthy, then retire the old. The edge round-robins by
