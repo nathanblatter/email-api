@@ -21,7 +21,9 @@ func PublicHandler(srv *Server, publicURL string, mcpHandler http.Handler) (http
 	pm.Handle("/oauth/", srv.Routes())
 	pm.Handle("/mcp", srv.Bearer(mcpHandler))
 	pm.Handle("/mcp/", srv.Bearer(mcpHandler))
-	pm.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
+	// Nothing else: no health probe, no UI, no keyed API. Discovery, client
+	// registration and the login page are the minimum an OAuth client needs
+	// before it holds a credential; everything past them requires the key.
 	return pm, u.Hostname(), nil
 }
 

@@ -43,7 +43,7 @@ func TestFullFlowAndHostSplit(t *testing.T) {
 	}
 
 	// Private routes are invisible on the public host; private host sees them.
-	for _, p := range []string{"/", "/ui/", "/inbox", "/send", "/health"} {
+	for _, p := range []string{"/", "/ui/", "/inbox", "/send", "/health", "/healthz", "/queue", "/f/x/y", "/inbound"} {
 		req, _ = http.NewRequest("GET", ts.URL+p, nil)
 		if res, _ = c.Do(asPublic(req)); res.StatusCode != 404 {
 			t.Fatalf("public %s should 404, got %d", p, res.StatusCode)

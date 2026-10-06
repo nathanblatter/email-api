@@ -61,13 +61,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server/{rest...}", s.authServerMetadata)
 	mux.HandleFunc("GET /.well-known/oauth-protected-resource", s.protectedResourceMetadata)
 	mux.HandleFunc("GET /.well-known/oauth-protected-resource/{rest...}", s.protectedResourceMetadata)
-	mux.HandleFunc("POST /oauth/register", s.register)
-	mux.HandleFunc("GET /oauth/authorize", s.authorizeForm)
 	limited := func(h http.HandlerFunc) http.Handler {
 		return s.limiter.Middleware(func(w http.ResponseWriter) {
 			writeOAuthError(w, http.StatusTooManyRequests, "slow_down", "too many attempts, try again shortly")
 		}, h)
 	}
+	mux.Handle("POST /oauth/register", limited(s.register))
+	mux.HandleFunc("GET /oauth/authorize", s.authorizeForm)
 	mux.Handle("POST /oauth/authorize", limited(s.authorizeSubmit))
 	mux.Handle("POST /oauth/token", limited(s.token))
 	return mux
