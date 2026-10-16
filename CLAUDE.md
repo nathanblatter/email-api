@@ -10,7 +10,8 @@ marketing features and tracking are out of scope.
 - Layout: `cmd/email-api` (wiring) · `internal/mail` (validation + MIME + SMTP) ·
   `internal/service` (delivery policy: send → spool → page → retry) · `internal/spool`
   (one JSON file per queued message) · `internal/quota` (daily budget in Redis, memory fallback) ·
-  `internal/fallback` (iMessage pager) · `internal/api` (HTTP) · `internal/mcpserver` (MCP tools).
+  `internal/fallback` (iMessage pager) · `internal/api` (HTTP) · `internal/mcpserver` (MCP tools) ·
+  `internal/bridge` (SQS outbox consumer). Compose services: `app` (Caddy edge) · `api` · `bridge` · `tunnel`.
 - Relay: `postfix` service in `~/docker-services` (→ Brevo). Reached over the external
   `docker-services_default` network. Postfix's `sender_canonical` map keeps `@nathanblatter.com`
   senders and rewrites everything else to noreply@ (`~/docker-services/postfix-sender-canonical`).
@@ -24,6 +25,14 @@ marketing features and tracking are out of scope.
 - Large attachments: `internal/files` uploads to the shared MinIO bucket `email-files` (lifecycle-expired)
   and `api.Files` serves `/f/{token}/{name}` on the public listener `:4501`; the compose `tunnel`
   service publishes it as `file.nathanblatter.com`. The keyed API on `:4500` stays Tailscale-only.
+- SQS bridge: `internal/bridge` (`email-api sqs-bridge`, compose service `bridge`) is the only consumer
+  of the auth-service stack's `MailQueue`. auth-service is a Lambda that cannot reach the Tailscale-only
+  keyed port, so it drops `{"to","subject","text","from"?}` on SQS and the bridge replays each as
+  `POST /send` on `http://app:4500` with the `auth-service` key — every send still has an `actor=`,
+  nothing public changes. 2xx/4xx → delete (4xx is logged as an error: retrying cannot fix a bad
+  message); 5xx/429/network → keep (SQS redelivers, DLQ after 5 receives). Env: `SQS_QUEUE_URL`
+  (empty = idle, never exits), `AWS_REGION`, `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` (SDK chain),
+  `BRIDGE_API_URL`, `BRIDGE_API_KEY`. Never logs the key or message text.
 
 ## Keys
 Named API keys live hashed in the inbox db (`api_keys`); `EMAIL_API_KEY` stays valid as actor `env`.

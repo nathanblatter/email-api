@@ -67,6 +67,27 @@ services:
       retries: 3
       start_period: 10s
 
+  # `bridge` is the SQS outbox consumer for auth-service (an AWS Lambda that
+  # cannot reach the Tailscale-only keyed port). Same image, different
+  # subcommand: long-polls the queue and replays each message as POST /send on
+  # the edge with the `auth-service` key. Idles (no exit) when SQS_QUEUE_URL is unset.
+  bridge:
+    image: email-api:latest
+    command: ["sqs-bridge"]
+    restart: unless-stopped
+    environment:
+      SQS_QUEUE_URL: ${SQS_QUEUE_URL}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${BRIDGE_AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${BRIDGE_AWS_SECRET_ACCESS_KEY}
+      BRIDGE_API_URL: http://app:4500
+      BRIDGE_API_KEY: ${BRIDGE_API_KEY}
+      TZ: America/Denver
+    depends_on:
+      - app
+    networks:
+      - default
+
   # Public hostnames file.nathanblatter.com → app:4501 and
   # email.nathanblatter.com → app:4500 (both land on the edge).
   tunnel:

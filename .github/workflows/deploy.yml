@@ -60,6 +60,11 @@ jobs:
               fi
               docker image prune -f --filter label=none >/dev/null 2>&1 || true
 
+              # SQS bridge (auth-service outbox): same freshly built image. A
+              # brief restart is fine; SQS holds the messages meanwhile.
+              docker compose up -d bridge
+              echo "Bridge up."
+
               # Inbound Email Worker. Token + secret come from the host .env, never from GitHub.
               export CLOUDFLARE_API_TOKEN=$(grep -E '^CLOUDFLARE_API_TOKEN=' .env | cut -d= -f2-)
               export CLOUDFLARE_ACCOUNT_ID=$(grep -E '^CLOUDFLARE_ACCOUNT_ID=' .env | cut -d= -f2-)

@@ -16,6 +16,7 @@ import (
 
 	"github.com/nathanblatter/email-api/internal/api"
 	"github.com/nathanblatter/email-api/internal/auth"
+	"github.com/nathanblatter/email-api/internal/bridge"
 	"github.com/nathanblatter/email-api/internal/config"
 	"github.com/nathanblatter/email-api/internal/fallback"
 	"github.com/nathanblatter/email-api/internal/files"
@@ -37,6 +38,15 @@ func main() {
 	}
 	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(log)
+
+	// The SQS bridge is its own process (compose service `bridge`) with its
+	// own, smaller env; it must not require the server's EMAIL_API_KEY etc.
+	if len(os.Args) > 1 && os.Args[1] == "sqs-bridge" {
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		code := bridge.Main(ctx, log, bridge.ConfigFromEnv())
+		stop()
+		os.Exit(code)
+	}
 
 	cfg, err := config.FromEnv()
 	if err != nil {
