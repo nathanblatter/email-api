@@ -83,6 +83,9 @@ services:
       BRIDGE_API_URL: http://app:4500
       BRIDGE_API_KEY: ${BRIDGE_API_KEY}
       TZ: America/Denver
+    # The image's HEALTHCHECK probes the HTTP server, which this process is not.
+    healthcheck:
+      disable: true
     depends_on:
       - app
     networks:
