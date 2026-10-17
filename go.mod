@@ -9,6 +9,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/modelcontextprotocol/go-sdk v1.6.1
+	github.com/nathanblatter/squawk/client v0.0.0-20261017003224-2ad57775b3b8
 	github.com/redis/go-redis/v9 v9.7.3
 	golang.org/x/text v0.42.0
 )

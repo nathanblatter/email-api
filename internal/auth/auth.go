@@ -91,7 +91,11 @@ CREATE TABLE IF NOT EXISTS api_keys (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   last_used_at TIMESTAMPTZ,
   revoked_at   TIMESTAMPTZ
-);`
+);
+-- 2026-10-17: the connector's OAuth moved to Squawk; these held its clients and tokens.
+DROP TABLE IF EXISTS oauth_tokens;
+DROP TABLE IF EXISTS oauth_codes;
+DROP TABLE IF EXISTS oauth_clients;`
 
 type PG struct {
 	pool *pgxpool.Pool

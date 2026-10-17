@@ -37,8 +37,16 @@ marketing features and tracking are out of scope.
 ## Keys
 Named API keys live hashed in the inbox db (`api_keys`); `EMAIL_API_KEY` stays valid as actor `env`.
 Mint per consumer with `docker compose exec api email-api keygen <name>` in `~/deploy/email-api`;
-`email-api keys` lists, `email-api revoke <name>` kills the key and its OAuth tokens. Every send logs
-`actor=`; OAuth tokens carry the key name they were minted with.
+`email-api keys` lists, `email-api revoke <name>` kills the key. Every send logs `actor=`.
+
+## Phone connector (Squawk)
+`https://email.nathanblatter.com/mcp` is an RFC 9728 protected resource whose authorization
+server is Squawk (`internal/connector`). Claude registers itself at Squawk, Nathan approves the
+connector in the Squawk console with his passkey, and the resulting ES256 tokens (aud = this
+service's Squawk id, scope `write`) are verified against Squawk's JWKS; connector sends carry
+`actor=claude-connector`. Env: `EMAIL_PUBLIC_URL`, `EMAIL_AUTH_ISSUER` (default Squawk),
+`EMAIL_AUTH_SERVICE_ID` (required). The old in-app OAuth server and its `oauth_*` tables are gone
+(dropped at startup).
 
 ## Verify
 `gofmt -l . && go vet ./... && go test ./...` — the Dockerfile runs the same, so the image is the gate.

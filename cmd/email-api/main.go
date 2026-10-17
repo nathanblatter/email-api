@@ -18,12 +18,12 @@ import (
 	"github.com/nathanblatter/email-api/internal/auth"
 	"github.com/nathanblatter/email-api/internal/bridge"
 	"github.com/nathanblatter/email-api/internal/config"
+	"github.com/nathanblatter/email-api/internal/connector"
 	"github.com/nathanblatter/email-api/internal/fallback"
 	"github.com/nathanblatter/email-api/internal/files"
 	"github.com/nathanblatter/email-api/internal/inbox"
 	"github.com/nathanblatter/email-api/internal/mail"
 	"github.com/nathanblatter/email-api/internal/mcpserver"
-	"github.com/nathanblatter/email-api/internal/oauth"
 	"github.com/nathanblatter/email-api/internal/quota"
 	"github.com/nathanblatter/email-api/internal/service"
 	"github.com/nathanblatter/email-api/internal/spool"
@@ -135,29 +135,18 @@ func main() {
 	mcpHandler := mcpserver.NewHandler(svc, in, Version)
 	var handler http.Handler = api.New(svc, keys, cfg.MaxUploadBytes, log, mcpHandler, in)
 
-	// Public connector (phone / claude.ai): OAuth + bearer-only /mcp on the
-	// public hostname; everything else stays Tailscale-only. Enforced in-app
-	// by Host, so a misconfigured tunnel cannot widen exposure.
+	// Public connector (phone / claude.ai): Squawk-verified bearer-only /mcp
+	// plus its protected-resource metadata on the public hostname; everything
+	// else stays Tailscale-only. Enforced in-app by Host, so a misconfigured
+	// tunnel cannot widen exposure.
 	if cfg.PublicURL != "" {
-		if pg == nil {
-			log.Error("EMAIL_PUBLIC_URL needs the inbox database (DATABASE_URL) for OAuth token storage")
-			os.Exit(1)
-		}
-		initCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-		ost, err := oauth.OpenPG(initCtx, pg.Pool())
-		cancel()
-		if err != nil {
-			log.Error("oauth store", "err", err)
-			os.Exit(1)
-		}
-		osrv := oauth.New(ost, cfg.PublicURL, keys, log)
-		pub, host, err := oauth.PublicHandler(osrv, cfg.PublicURL, mcpHandler)
+		pub, host, err := connector.Handler(connector.Config{PublicURL: cfg.PublicURL, Issuer: cfg.AuthIssuer, ServiceID: cfg.AuthServiceID}, mcpHandler)
 		if err != nil {
 			log.Error("public connector", "err", err)
 			os.Exit(1)
 		}
-		handler = oauth.SplitByHost(host, pub, handler)
-		log.Info("public connector enabled (OAuth + bearer /mcp only)", "host", host)
+		handler = connector.SplitByHost(host, pub, handler)
+		log.Info("public connector enabled (Squawk tokens, bearer /mcp only)", "host", host, "issuer", cfg.AuthIssuer)
 	}
 	srv := &http.Server{Addr: cfg.Addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	pub := &http.Server{Addr: cfg.FilesAddr, Handler: api.Files(store, in, log), ReadHeaderTimeout: 10 * time.Second}

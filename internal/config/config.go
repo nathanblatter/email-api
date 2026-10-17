@@ -58,10 +58,14 @@ type Config struct {
 	InboxBucket   string
 	InboxNotify   bool // page the phone on new (non-suspicious) mail
 
-	// PublicURL enables the claude.ai connector surface: an OAuth 2.1 server
-	// plus a bearer-only /mcp, served only when the request's Host is this
-	// hostname (the tunnel preserves it). Needs DATABASE_URL for token storage.
+	// PublicURL enables the claude.ai connector surface: a bearer-only /mcp
+	// (tokens verified against Squawk) served only when the request's Host is
+	// this hostname (the tunnel preserves it).
 	PublicURL string
+	// AuthIssuer is Squawk; AuthServiceID is this service's id there (the
+	// audience of connector tokens). Both required with PublicURL.
+	AuthIssuer    string
+	AuthServiceID string
 }
 
 // InboxEnabled reports whether receiving is configured.
@@ -98,6 +102,11 @@ func FromEnv() (Config, error) {
 		InboxBucket:        env("EMAIL_INBOX_BUCKET", "email-inbox"),
 		InboxNotify:        env("EMAIL_INBOX_NOTIFY", "true") != "false",
 		PublicURL:          strings.TrimRight(os.Getenv("EMAIL_PUBLIC_URL"), "/"),
+		AuthIssuer:         strings.TrimRight(env("EMAIL_AUTH_ISSUER", "https://squawk.nathanblatter.com"), "/"),
+		AuthServiceID:      os.Getenv("EMAIL_AUTH_SERVICE_ID"),
+	}
+	if c.PublicURL != "" && c.AuthServiceID == "" {
+		return c, fmt.Errorf("EMAIL_AUTH_SERVICE_ID is required with EMAIL_PUBLIC_URL (the service id in Squawk)")
 	}
 	if c.APIKey == "" {
 		return c, fmt.Errorf("EMAIL_API_KEY is required")
