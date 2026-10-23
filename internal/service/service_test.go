@@ -140,6 +140,28 @@ func TestThrottledPagesCarryCount(t *testing.T) {
 	}
 }
 
+func TestUnmeteredDomainSkipsBudget(t *testing.T) {
+	svc, snd, pg, _ := setup(t, 1)
+	svc.opt.Policy.AllowedDomains = append(svc.opt.Policy.AllowedDomains, "byuisresearch.com")
+	svc.opt.UnmeteredDomains = []string{"byuisresearch.com"}
+	ses := &mail.Message{From: "nathan@ByuIsResearch.com", To: mail.AddrList([]string{"a@x.com", "b@x.com"}), Subject: "s", Text: "t"}
+	for i := 0; i < 3; i++ {
+		if r, err := svc.Send(context.Background(), ses); err != nil || r.Status != "sent" {
+			t.Fatalf("unmetered send %d: %+v %v", i, r, err)
+		}
+	}
+	// The metered domain still has its full budget of 1.
+	if r, _ := svc.Send(context.Background(), msg("c@x.com")); r.Status != "sent" {
+		t.Fatalf("metered send should fit the untouched budget: %+v", r)
+	}
+	if r, _ := svc.Send(context.Background(), msg("d@x.com")); r.Status != "queued" || r.Reason != "daily_budget" {
+		t.Fatalf("second metered send should be over budget: %+v", r)
+	}
+	if len(snd.sent) != 4 || len(pg.pages) != 1 {
+		t.Fatalf("sent=%d pages=%d", len(snd.sent), len(pg.pages))
+	}
+}
+
 func TestDailyBudgetSpoolsUntilReset(t *testing.T) {
 	svc, snd, pg, ck := setup(t, 2)
 	if r, _ := svc.Send(context.Background(), msg("a@x.com", "b@x.com")); r.Status != "sent" {

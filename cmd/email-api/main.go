@@ -116,6 +116,8 @@ func main() {
 		MaxLinkBytes: cfg.MaxUploadBytes,
 		SpoolMaxAge:  cfg.SpoolMaxAge,
 		PageInterval: cfg.PageInterval,
+		// The budget exists for the Brevo relay; SES-routed domains have their own limits.
+		UnmeteredDomains: cfg.SESDomains,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

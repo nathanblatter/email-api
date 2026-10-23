@@ -24,9 +24,13 @@ import (
 type Options struct {
 	Policy       mail.Policy
 	MaxLinkBytes int64 // largest single file that may become a link (0 = unlimited)
-	SpoolMaxAge  time.Duration
-	PageInterval time.Duration
-	Now          func() time.Time
+	// UnmeteredDomains are From domains whose sends do not count against the
+	// daily budget: the budget guards the Brevo relay's free tier, and mail
+	// routed elsewhere (SES for byuisresearch.com) has its own limits.
+	UnmeteredDomains []string
+	SpoolMaxAge      time.Duration
+	PageInterval     time.Duration
+	Now              func() time.Time
 }
 
 type Service struct {
@@ -186,6 +190,20 @@ func htmlEscape(s string) string {
 	return r.Replace(s)
 }
 
+// reserve charges n recipients to the daily budget unless the sender's domain
+// is unmetered.
+func (s *Service) reserve(ctx context.Context, from string, n int) (ok bool, used int) {
+	if at := strings.LastIndex(from, "@"); at >= 0 {
+		d := strings.ToLower(from[at+1:])
+		for _, u := range s.opt.UnmeteredDomains {
+			if strings.EqualFold(u, d) {
+				return true, s.quota.Used(ctx)
+			}
+		}
+	}
+	return s.quota.Reserve(ctx, n)
+}
+
 func (s *Service) deliver(ctx context.Context, p *mail.Prepared) (Result, error) {
 	rcpts := p.Recipients()
 	entry := &spool.Entry{
@@ -193,7 +211,7 @@ func (s *Service) deliver(ctx context.Context, p *mail.Prepared) (Result, error)
 		Preview: spool.Preview(p.Text, 400), Raw: p.Raw, CreatedAt: s.opt.Now(),
 	}
 
-	if ok, used := s.quota.Reserve(ctx, len(rcpts)); !ok {
+	if ok, used := s.reserve(ctx, p.From.Address, len(rcpts)); !ok {
 		entry.Reason = spool.ReasonBudget
 		reset := quota.NextReset(s.opt.Now())
 		if err := s.spool.Put(entry); err != nil {
@@ -300,7 +318,7 @@ func (s *Service) RetryOnce(ctx context.Context) (delivered, remaining, dead int
 			continue
 		}
 		if e.Reason == spool.ReasonBudget {
-			if ok, _ := s.quota.Reserve(ctx, len(e.Rcpts)); !ok {
+			if ok, _ := s.reserve(ctx, e.From, len(e.Rcpts)); !ok {
 				remaining++
 				continue
 			}
