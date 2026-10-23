@@ -27,6 +27,13 @@ services:
       SMTP_PORT: ${SMTP_PORT:-25}
       EMAIL_DEFAULT_FROM: ${EMAIL_DEFAULT_FROM:-Nathan Blatter <noreply@nathanblatter.com>}
       EMAIL_ALLOWED_FROM_DOMAINS: ${EMAIL_ALLOWED_FROM_DOMAINS:-nathanblatter.com}
+      # Domains sent through the Amazon SES API instead of postfix (DNS + DKIM in
+      # Route 53: byuisresearch.com). They are allowed From domains implicitly.
+      # IAM user email-api (ses:SendEmail as *@byuisresearch.com only).
+      SES_DOMAINS: ${SES_DOMAINS}
+      SES_REGION: ${SES_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${SES_AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${SES_AWS_SECRET_ACCESS_KEY}
       # Brevo free tier is 300 recipients/day; keep headroom for personal-site's own sends.
       EMAIL_DAILY_BUDGET: ${EMAIL_DAILY_BUDGET:-250}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/3}
@@ -87,6 +94,30 @@ services:
       BRIDGE_API_KEY: ${BRIDGE_API_KEY}
       TZ: America/Denver
     # The image's HEALTHCHECK probes the HTTP server, which this process is not.
+    healthcheck:
+      disable: true
+    depends_on:
+      - app
+    networks:
+      - default
+
+  # `inbound` receives byuisresearch.com: SES receiving stores each message in
+  # S3 and notifies SNS → SQS; this loop fetches the object and POSTs it to
+  # /inbound on the public listener (via the edge), exactly like the Cloudflare
+  # Email Worker does for nathanblatter.com. Pull-based, so an outage here just
+  # parks mail in SQS (14 days, DLQ after 5 failed receives).
+  inbound:
+    image: email-api:latest
+    command: ["ses-inbound"]
+    restart: unless-stopped
+    environment:
+      INBOUND_SQS_QUEUE_URL: ${INBOUND_SQS_QUEUE_URL}
+      SES_REGION: ${SES_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${SES_AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${SES_AWS_SECRET_ACCESS_KEY}
+      INBOUND_API_URL: http://app:4501
+      EMAIL_INBOUND_SECRET: ${EMAIL_INBOUND_SECRET}
+      TZ: America/Denver
     healthcheck:
       disable: true
     depends_on:

@@ -1,6 +1,8 @@
 # email-api
 
-HTTP + MCP gateway for sending email from `@nathanblatter.com` addresses. The
+HTTP + MCP gateway for sending email from `@nathanblatter.com` and `@byuisresearch.com`
+addresses (the first via the house postfix→Brevo relay, the second via Amazon SES; DNS for
+byuisresearch.com lives in Route 53 and SES receives for it too — see CLAUDE.md). The
 sibling of [imessage-api](../imessage-api): same `X-API-Key` auth, same
 Tailscale-only bind, same tiny surface.
 

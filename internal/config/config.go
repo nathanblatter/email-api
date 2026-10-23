@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -19,7 +20,14 @@ type Config struct {
 	SMTPPort int
 
 	DefaultFrom        string   // used when a request omits "from"
-	AllowedFromDomains []string // From must be under one of these domains
+	AllowedFromDomains []string // From must be under one of these domains (SESDomains are added)
+
+	// SES: From domains routed through the Amazon SES API instead of the
+	// postfix relay (byuisresearch.com, whose DNS/DKIM live in AWS). Empty →
+	// everything goes to postfix. Credentials come from the SDK chain
+	// (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY in the environment).
+	SESDomains []string
+	SESRegion  string
 
 	// Daily send budget (recipients counted, matching how the relay counts).
 	// Over budget, mail is spooled until the next UTC day instead of being
@@ -85,6 +93,8 @@ func FromEnv() (Config, error) {
 		SMTPHost:           env("SMTP_HOST", "postfix"),
 		DefaultFrom:        env("EMAIL_DEFAULT_FROM", "Nathan Blatter <noreply@nathanblatter.com>"),
 		AllowedFromDomains: splitList(env("EMAIL_ALLOWED_FROM_DOMAINS", "nathanblatter.com")),
+		SESDomains:         splitList(os.Getenv("SES_DOMAINS")),
+		SESRegion:          env("SES_REGION", "us-east-1"),
 		RedisURL:           os.Getenv("REDIS_URL"),
 		IMessageURL:        env("IMESSAGE_API_URL", "http://100.79.61.79:8899"),
 		IMessageKey:        os.Getenv("IMESSAGE_API_KEY"),
@@ -110,6 +120,13 @@ func FromEnv() (Config, error) {
 	}
 	if c.APIKey == "" {
 		return c, fmt.Errorf("EMAIL_API_KEY is required")
+	}
+	// A domain that sends through SES is by definition one we may send as
+	// (splitList lower-cases both lists).
+	for _, d := range c.SESDomains {
+		if !slices.Contains(c.AllowedFromDomains, d) {
+			c.AllowedFromDomains = append(c.AllowedFromDomains, d)
+		}
 	}
 	var err error
 	if c.SMTPPort, err = envInt("SMTP_PORT", 25); err != nil {

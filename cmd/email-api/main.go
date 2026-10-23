@@ -47,6 +47,13 @@ func main() {
 		stop()
 		os.Exit(code)
 	}
+	// Likewise the SES inbound bridge (compose service `inbound`).
+	if len(os.Args) > 1 && os.Args[1] == "ses-inbound" {
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		code := bridge.InboundMain(ctx, log, bridge.InboundConfigFromEnv())
+		stop()
+		os.Exit(code)
+	}
 
 	cfg, err := config.FromEnv()
 	if err != nil {
@@ -62,7 +69,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	sender := &mail.SMTPSender{Addr: cfg.SMTPAddr()}
+	var sender mail.Sender = &mail.SMTPSender{Addr: cfg.SMTPAddr()}
+	if len(cfg.SESDomains) > 0 {
+		ses, err := mail.OpenSES(context.Background(), cfg.SESRegion)
+		if err != nil {
+			log.Error("ses", "err", err)
+			os.Exit(1)
+		}
+		routes := make(map[string]mail.Sender, len(cfg.SESDomains))
+		for _, d := range cfg.SESDomains {
+			routes[d] = ses
+		}
+		sender = mail.NewRoutedSender(sender, routes)
+	}
 	var pager fallback.Pager
 	im := &fallback.IMessage{URL: cfg.IMessageURL, APIKey: cfg.IMessageKey, Recipient: cfg.IMessageRecipient}
 	if im.Configured() {

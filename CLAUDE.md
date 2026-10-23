@@ -11,7 +11,8 @@ marketing features and tracking are out of scope.
   `internal/service` (delivery policy: send → spool → page → retry) · `internal/spool`
   (one JSON file per queued message) · `internal/quota` (daily budget in Redis, memory fallback) ·
   `internal/fallback` (iMessage pager) · `internal/api` (HTTP) · `internal/mcpserver` (MCP tools) ·
-  `internal/bridge` (SQS outbox consumer). Compose services: `app` (Caddy edge) · `api` · `bridge` · `tunnel`.
+  `internal/bridge` (SQS outbox consumer + SES inbound consumer). Compose services: `app` (Caddy edge) ·
+  `api` · `bridge` · `inbound` · `tunnel`.
 - Relay: `postfix` service in `~/docker-services` (→ Brevo). Reached over the external
   `docker-services_default` network. Postfix's `sender_canonical` map keeps `@nathanblatter.com`
   senders and rewrites everything else to noreply@ (`~/docker-services/postfix-sender-canonical`).
@@ -33,6 +34,18 @@ marketing features and tracking are out of scope.
   message); 5xx/429/network → keep (SQS redelivers, DLQ after 5 receives). Env: `SQS_QUEUE_URL`
   (empty = idle, never exits), `AWS_REGION`, `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` (SDK chain),
   `BRIDGE_API_URL`, `BRIDGE_API_KEY`. Never logs the key or message text.
+
+- byuisresearch.com (second domain, 2026-10-22): everything on AWS, DNS stays in Route 53 (zone
+  `Z07173382LY2R2TMZRD27`, also hosts ai./hh./menu./kateri. — never touch those records). Sending:
+  `mail.RoutedSender` routes From domains in `SES_DOMAINS` to `mail.SESSender` (SES API, raw MIME, SES
+  signs DKIM; MAIL FROM `mail.byuisresearch.com` for aligned SPF); everything else still goes to postfix.
+  Receiving: SES receipt rule set `email-api` → S3 `email-api-inbound-byuisresearch-<acct>` (30-day
+  expiry) + SNS → SQS `email-api-inbound-byuisresearch` (DLQ after 5) → compose service `inbound`
+  (`email-api ses-inbound`, `bridge.Inbound`) → `POST /inbound` on `http://app:4501` with the shared
+  secret, prepending an `Authentication-Results` header built from SES's verdicts. Pull-based: an
+  outage parks mail in SQS (14 days). IAM user `email-api` is scoped to exactly those three things.
+  Env: `SES_DOMAINS`, `SES_REGION`, `SES_AWS_ACCESS_KEY_ID`/`SECRET`, `INBOUND_SQS_QUEUE_URL`.
+  Gotcha: SES account is in sandbox until production access is granted (200/day, verified recipients only).
 
 ## Keys
 Named API keys live hashed in the inbox db (`api_keys`); `EMAIL_API_KEY` stays valid as actor `env`.

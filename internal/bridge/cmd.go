@@ -26,6 +26,61 @@ func ConfigFromEnv() Config {
 	}
 }
 
+// InboundConfig is read from the environment by InboundMain.
+type InboundConfig struct {
+	QueueURL string // INBOUND_SQS_QUEUE_URL; empty disables the loop
+	Region   string // SES_REGION, default us-east-1
+	APIURL   string // INBOUND_API_URL, default http://app:4501 (the public listener)
+	Secret   string // EMAIL_INBOUND_SECRET, shared with /inbound
+}
+
+func InboundConfigFromEnv() InboundConfig {
+	return InboundConfig{
+		QueueURL: strings.TrimSpace(os.Getenv("INBOUND_SQS_QUEUE_URL")),
+		Region:   envOr("SES_REGION", "us-east-1"),
+		APIURL:   envOr("INBOUND_API_URL", "http://app:4501"),
+		Secret:   strings.TrimSpace(os.Getenv("EMAIL_INBOUND_SECRET")),
+	}
+}
+
+// InboundMain is the `email-api ses-inbound` subcommand (compose service
+// `inbound`): SES receiving for byuisresearch.com → S3 + SNS → SQS → this →
+// POST /inbound. Same disabled-but-up behaviour as Main.
+func InboundMain(ctx context.Context, log *slog.Logger, cfg InboundConfig) int {
+	if cfg.QueueURL == "" {
+		log.Info("inbound bridge disabled: INBOUND_SQS_QUEUE_URL unset")
+		<-ctx.Done()
+		return 0
+	}
+	if cfg.Secret == "" {
+		log.Error("EMAIL_INBOUND_SECRET is required")
+		return 1
+	}
+	q, err := OpenSQS(ctx, cfg.Region, cfg.QueueURL)
+	if err != nil {
+		log.Error("sqs", "err", err)
+		return 1
+	}
+	objs, err := OpenS3(ctx, cfg.Region)
+	if err != nil {
+		log.Error("s3", "err", err)
+		return 1
+	}
+	b := &Inbound{
+		Queue:   q,
+		Objects: objs,
+		Poster:  &HTTPPoster{BaseURL: cfg.APIURL, Secret: cfg.Secret},
+		Log:     log,
+	}
+	log.Info("ses inbound bridge polling", "queue", cfg.QueueURL, "region", cfg.Region, "api", cfg.APIURL)
+	if err := b.Run(ctx); err != nil {
+		log.Error("inbound bridge", "err", err)
+		return 1
+	}
+	log.Info("ses inbound bridge stopped")
+	return 0
+}
+
 func envOr(k, def string) string {
 	if v := strings.TrimSpace(os.Getenv(k)); v != "" {
 		return v

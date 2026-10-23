@@ -82,7 +82,7 @@ func NewHandler(svc *service.Service, in *inbox.Service, version string) http.Ha
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "email", Version: version}, nil)
 
 	addTool(server, &mcpsdk.Tool{Name: "send_email",
-		Description: "Send one email from a nathanblatter.com address via the house relay. Returns status sent (delivered to relay) or queued (relay down or daily budget spent; retried automatically and paged to Nathan's phone)."},
+		Description: "Send one email from a nathanblatter.com or byuisresearch.com address (routed to the right relay by domain). Returns status sent (delivered to relay) or queued (relay down or daily budget spent; retried automatically and paged to Nathan's phone)."},
 		func(ctx context.Context, in sendIn) (service.Result, error) {
 			m, err := in.toMessage()
 			if err != nil {
