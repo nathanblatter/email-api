@@ -69,7 +69,7 @@ func ConfigFromEnv() Config {
 		IMAPAddr:       env("MAIL_IMAP_ADDR", ":1993"),
 		SMTPAddr:       env("MAIL_SMTP_ADDR", ":1465"),
 		ProxyProtocol:  env("MAIL_PROXY_PROTOCOL", "true") != "false",
-		SendURL:        strings.TrimRight(env("MAIL_SEND_URL", "http://app:4500"), "/"),
+		SendURL:        strings.TrimRight(env("MAIL_SEND_URL", "http://email-api-app-1:4500"), "/"),
 		SendKey:        os.Getenv("MAIL_SEND_KEY"),
 		CertDir:        env("MAIL_CERT_DIR", "/data/certmagic"),
 		CertFile:       os.Getenv("MAIL_TLS_CERT"),

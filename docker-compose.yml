@@ -145,7 +145,9 @@ services:
     environment:
       MAIL_ADDRESS: ${MAIL_ADDRESS:-nathan@nathanblatter.com}
       MAIL_HOSTNAME: ${MAIL_HOSTNAME:-mail.nathanblatter.com}
-      MAIL_SEND_URL: http://app:4500
+      # Not "app": mailgw also joins docker-services_default, where other
+      # projects' containers answer to "app" (impostor, secreth, ...).
+      MAIL_SEND_URL: http://email-api-app-1:4500
       MAIL_SEND_KEY: ${MAIL_GATEWAY_API_KEY}
       MAIL_ACME_EMAIL: ${MAIL_ACME_EMAIL:-nathan@nathanblatter.com}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
