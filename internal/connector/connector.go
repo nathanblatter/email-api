@@ -27,9 +27,10 @@ const Actor = "claude-connector"
 
 // Config is what the public mux needs.
 type Config struct {
-	PublicURL string // https origin the tunnel forwards, e.g. https://email.nathanblatter.com
-	Issuer    string // Squawk, e.g. https://squawk.nathanblatter.com
-	ServiceID string // this service's id in Squawk (the token audience)
+	PublicURL string     // https origin the tunnel forwards, e.g. https://email.nathanblatter.com
+	Issuer    string     // Squawk, e.g. https://squawk.nathanblatter.com
+	ServiceID string     // this service's id in Squawk (the token audience)
+	Mail      *MailSetup // optional: the owner-only Apple Mail setup page at /mail
 }
 
 // Handler builds the public mux and returns it with the public hostname.
@@ -50,6 +51,9 @@ func Handler(cfg Config, mcp http.Handler) (http.Handler, string, error) {
 	pm.Handle("GET /.well-known/oauth-protected-resource/mcp", squawk.ProtectedResourceMetadata(v, "email-api", []string{"read", "write"}))
 	pm.Handle("/mcp", guard(mcp))
 	pm.Handle("/mcp/", guard(mcp))
+	if cfg.Mail != nil {
+		cfg.Mail.mount(pm, origin, cfg.Issuer, v)
+	}
 	return pm, u.Hostname(), nil
 }
 

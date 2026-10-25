@@ -64,6 +64,9 @@ services:
       EMAIL_PUBLIC_URL: ${EMAIL_PUBLIC_URL:-https://email.nathanblatter.com}
       EMAIL_AUTH_ISSUER: ${EMAIL_AUTH_ISSUER:-https://squawk.nathanblatter.com}
       EMAIL_AUTH_SERVICE_ID: ${EMAIL_AUTH_SERVICE_ID}
+      # Apple Mail setup page (https://email.nathanblatter.com/mail): the
+      # public PKCE client registered at Squawk; empty = page disabled.
+      EMAIL_MAIL_CLIENT_ID: ${EMAIL_MAIL_CLIENT_ID}
       TZ: America/Denver
     volumes:
       - spool:/data
@@ -125,6 +128,43 @@ services:
     networks:
       - default
 
+  # `mailgw` is the IMAP + SMTP-submission gateway for Apple Mail
+  # (internal/imapd). Public edge: the Hetzner VPS terminates nothing; it
+  # forwards :993/:465 over the tailnet with a PROXY v2 header to these
+  # Tailscale-only ports, and TLS for mail.nathanblatter.com terminates here
+  # (Let's Encrypt via Cloudflare DNS-01, kept in the mailcerts volume).
+  # Single instance: it holds the mailboxes in memory and writes through to
+  # Postgres. A deploy restarts it; Mail reconnects on its own.
+  mailgw:
+    image: email-api:latest
+    command: ["mail-gateway"]
+    restart: unless-stopped
+    ports:
+      - "100.79.61.79:1993:1993"
+      - "100.79.61.79:1465:1465"
+    environment:
+      MAIL_ADDRESS: ${MAIL_ADDRESS:-nathan@nathanblatter.com}
+      MAIL_HOSTNAME: ${MAIL_HOSTNAME:-mail.nathanblatter.com}
+      MAIL_SEND_URL: http://app:4500
+      MAIL_SEND_KEY: ${MAIL_GATEWAY_API_KEY}
+      MAIL_ACME_EMAIL: ${MAIL_ACME_EMAIL:-nathan@nathanblatter.com}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/email}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      EMAIL_INBOX_BUCKET: ${EMAIL_INBOX_BUCKET:-email-inbox}
+      TZ: America/Denver
+    volumes:
+      - mailcerts:/data
+    healthcheck:
+      disable: true
+    depends_on:
+      - app
+    networks:
+      - default
+      - services
+
   # Public hostnames file.nathanblatter.com → app:4501 and
   # email.nathanblatter.com → app:4500 (both land on the edge).
   tunnel:
@@ -138,6 +178,7 @@ services:
 
 volumes:
   spool:
+  mailcerts:
 
 networks:
   # Reach postfix and redis by service name on the shared infra network.

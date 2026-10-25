@@ -61,6 +61,31 @@ service's Squawk id, scope `write`) are verified against Squawk's JWKS; connecto
 `EMAIL_AUTH_SERVICE_ID` (required). The old in-app OAuth server and its `oauth_*` tables are gone
 (dropped at startup).
 
+## Apple Mail (IMAP + SMTP submission)
+`internal/imapd` (compose service `mailgw`, `email-api mail-gateway`) lets Apple Mail use the owned
+inbox as nathan@nathanblatter.com. Added 2026-10-25 (flightdeck email-api-22).
+- Path: Mail -> `mail.nathanblatter.com` (Cloudflare A record, grey cloud, -> Hetzner 178.104.198.127)
+  -> HAProxy on Hetzner (`/etc/haproxy/haproxy.cfg`, TCP mode, `send-proxy-v2`, ufw 993/465)
+  -> tailnet -> `100.79.61.79:1993` (IMAPS) / `:1465` (SMTPS) -> `mailgw`. TLS terminates in mailgw
+  (certmagic, Let's Encrypt DNS-01 via `CLOUDFLARE_API_TOKEN`, stored in the `mailcerts` volume), so
+  Hetzner never sees plaintext. The PROXY header is REQUIRED on those ports.
+- Mailboxes: INBOX = `inbox_messages` rows whose `envelope_to` contains `MAIL_ADDRESS`, UIDs from
+  `inbox_messages.imap_uid` (sequence `inbox_messages_imap_uid_seq`, UIDVALIDITY 1), extra flags in
+  `imap_flags`, \Seen = `read`. Sent/Drafts/Trash/Archive/Junk + folders Mail creates live in
+  `imap_folders` / `imap_messages` (raw BYTEA). Held in memory, written through to Postgres; a 10 s
+  sync loop picks up new deliveries and web-inbox reads/deletes. Expunging from INBOX (incl. Mail's
+  move to Trash) deletes the inbox row, same as the web inbox delete. Single instance only.
+- Auth: per-device credentials in `mail_devices` (`internal/maildev`, SHA-256 hashed, `md_` prefix),
+  minted ONLY by `https://email.nathanblatter.com/mail`: owner signs in via Squawk OAuth (public PKCE
+  client `EMAIL_MAIL_CLIENT_ID`, resource `/mcp`, token must have sub=owner, approved with the owner
+  passkey in the Squawk console), gets a .mobileconfig with the credential; revoke on the same page.
+  10 failed logins per IP per 15 min -> blocked. Username must be MAIL_ADDRESS.
+- Sending: SMTP AUTH PLAIN, MAIL FROM and the From header must be MAIL_ADDRESS; the raw message goes
+  to keyed `POST /send/raw` (actor `mail-gateway`, key `MAIL_GATEWAY_API_KEY`) which strips Bcc and
+  applies the From policy, budget, spool and pager. Mail itself APPENDs the copy to Sent.
+- Local test: run `email-api mail-gateway` with `MAIL_TLS_CERT`/`MAIL_TLS_KEY` (self-signed),
+  `MAIL_PROXY_PROTOCOL=false` and a throwaway DATABASE_URL; drive it with python imaplib/smtplib.
+
 ## Verify
 `gofmt -l . && go vet ./... && go test ./...` — the Dockerfile runs the same, so the image is the gate.
 

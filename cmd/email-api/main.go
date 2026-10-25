@@ -21,6 +21,7 @@ import (
 	"github.com/nathanblatter/email-api/internal/connector"
 	"github.com/nathanblatter/email-api/internal/fallback"
 	"github.com/nathanblatter/email-api/internal/files"
+	"github.com/nathanblatter/email-api/internal/imapd"
 	"github.com/nathanblatter/email-api/internal/inbox"
 	"github.com/nathanblatter/email-api/internal/mail"
 	"github.com/nathanblatter/email-api/internal/mcpserver"
@@ -44,6 +45,13 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "sqs-bridge" {
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		code := bridge.Main(ctx, log, bridge.ConfigFromEnv())
+		stop()
+		os.Exit(code)
+	}
+	// The IMAP/SMTP mail gateway for Apple Mail (compose service `mailgw`).
+	if len(os.Args) > 1 && os.Args[1] == "mail-gateway" {
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		code := imapd.Main(ctx, log, imapd.ConfigFromEnv())
 		stop()
 		os.Exit(code)
 	}
@@ -161,7 +169,12 @@ func main() {
 	// else stays Tailscale-only. Enforced in-app by Host, so a misconfigured
 	// tunnel cannot widen exposure.
 	if cfg.PublicURL != "" {
-		pub, host, err := connector.Handler(connector.Config{PublicURL: cfg.PublicURL, Issuer: cfg.AuthIssuer, ServiceID: cfg.AuthServiceID}, mcpHandler)
+		ccfg := connector.Config{PublicURL: cfg.PublicURL, Issuer: cfg.AuthIssuer, ServiceID: cfg.AuthServiceID}
+		if setup := mailSetup(cfg, pg, log); setup != nil {
+			ccfg.Mail = setup
+			log.Info("apple mail setup page enabled", "path", "/mail")
+		}
+		pub, host, err := connector.Handler(ccfg, mcpHandler)
 		if err != nil {
 			log.Error("public connector", "err", err)
 			os.Exit(1)

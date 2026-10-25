@@ -463,3 +463,25 @@ func safeName(name string) string {
 	}
 	return name
 }
+
+// Raw returns the original RFC 5322 bytes of a stored message (the IMAP
+// gateway serves these as-is so Mail sees exactly what was delivered).
+func (s *PG) Raw(ctx context.Context, id string) ([]byte, error) {
+	var key string
+	err := s.pool.QueryRow(ctx, `SELECT raw_key FROM inbox_messages WHERE id=$1`, id).Scan(&key)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if key == "" {
+		return nil, ErrNotFound
+	}
+	obj, err := s.s3.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer obj.Close()
+	return io.ReadAll(obj)
+}

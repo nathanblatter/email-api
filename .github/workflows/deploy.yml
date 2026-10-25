@@ -62,8 +62,8 @@ jobs:
 
               # SQS bridge (auth-service outbox): same freshly built image. A
               # brief restart is fine; SQS holds the messages meanwhile.
-              docker compose up -d bridge inbound
-              echo "Bridges up."
+              docker compose up -d bridge inbound mailgw
+              echo "Bridges and mail gateway up."
 
               # Inbound Email Worker. Token + secret come from the host .env, never from GitHub.
               export CLOUDFLARE_API_TOKEN=$(grep -E '^CLOUDFLARE_API_TOKEN=' .env | cut -d= -f2-)

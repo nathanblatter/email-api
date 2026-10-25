@@ -37,6 +37,7 @@ func New(svc *service.Service, keys auth.Keys, maxUpload int64, log *slog.Logger
 	mux.HandleFunc("GET /health", s.health)
 	mux.Handle("POST /send", s.auth(http.HandlerFunc(s.send)))
 	mux.Handle("POST /send/batch", s.auth(http.HandlerFunc(s.sendBatch)))
+	mux.Handle("POST /send/raw", s.auth(http.HandlerFunc(s.sendRaw)))
 	mux.Handle("GET /queue", s.auth(http.HandlerFunc(s.queue)))
 	mux.Handle("POST /queue/retry", s.auth(http.HandlerFunc(s.retry)))
 	if mcp != nil {
