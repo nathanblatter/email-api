@@ -30,7 +30,10 @@ jobs:
             echo "Recreating edge (requested)"
             docker compose up -d --force-recreate app
           else
-            docker compose up -d --no-recreate app tunnel
+            docker compose up -d --no-recreate app
+            # The tunnel publishes no port, so letting compose recreate it on a
+            # config/image change (e.g. a cloudflared security bump) is safe.
+            docker compose up -d tunnel
             docker compose exec -T app caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile || echo "caddy reload skipped"
           fi
 

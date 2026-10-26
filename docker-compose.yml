@@ -170,7 +170,7 @@ services:
   # Public hostnames file.nathanblatter.com → app:4501 and
   # email.nathanblatter.com → app:4500 (both land on the edge).
   tunnel:
-    image: cloudflare/cloudflared:latest
+    image: cloudflare/cloudflared:2026.10.3
     restart: unless-stopped
     command: tunnel run
     environment:
